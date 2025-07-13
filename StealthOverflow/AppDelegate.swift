@@ -217,9 +217,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func addMessage(_ message: String, isUser: Bool) {
         let label = NSTextField(wrappingLabelWithString: message)
-        label.preferredMaxLayoutWidth = CGFloat.greatestFiniteMagnitude
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = NSFont.systemFont(ofSize: 14)
+        
+//        label.preferredMaxLayoutWidth = CGFloat.greatestFiniteMagnitude
+        
         label.textColor = isUser ? NSColor.white : NSColor.labelColor
         label.backgroundColor = .clear
         label.isBezeled = false
@@ -228,16 +230,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         label.isSelectable = false
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 0
+        
         label.alignment = .left
         
-        DispatchQueue.main.async {
-            label.preferredMaxLayoutWidth = self.messagesStack.frame.width - 20
-        }
+//        DispatchQueue.main.async {
+//            label.preferredMaxLayoutWidth = self.messagesStack.frame.width - 20
+//        }
 
         // Container view with a subtle background (chat bubble)
         let bubble = NSView()
         bubble.translatesAutoresizingMaskIntoConstraints = false
         bubble.wantsLayer = true
+        bubble.layer?.cornerRadius = 14
+        bubble.layer?.masksToBounds = true
         bubble.layer?.backgroundColor = isUser
             ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
             : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
@@ -260,6 +265,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+            
+            bubble.widthAnchor.constraint(lessThanOrEqualTo: messagesStack.widthAnchor, multiplier: 0.8)
         ])
         if isUser {
             bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
@@ -270,6 +277,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    
     func mockResponse(for text: String) -> String {
         return "This is a mock response to: \"\(text)\""
     }
