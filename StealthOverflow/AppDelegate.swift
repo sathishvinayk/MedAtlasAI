@@ -61,16 +61,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-
+        
         let blur = NSVisualEffectView(frame: window.contentView!.bounds)
         blur.autoresizingMask = [.width, .height]
         blur.material = .underWindowBackground
         blur.blendingMode = .behindWindow
         blur.state = .active
         blur.wantsLayer = true
-        blur.layer?.cornerRadius = 20
+        blur.layer?.cornerRadius = 16
         blur.layer?.masksToBounds = true
-        blur.layer?.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 0.4).cgColor
+        blur.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
+        blur.frame = NSInsetRect(window.contentView!.bounds, 0, -28)
+
+
+//        let blur = NSVisualEffectView(frame: window.contentView!.bounds)
+//        blur.autoresizingMask = [.width, .height]
+//        blur.material = .underWindowBackground
+//        blur.blendingMode = .behindWindow
+//        blur.state = .active
+//        blur.wantsLayer = true
+//        blur.layer?.cornerRadius = 20
+//        blur.layer?.masksToBounds = true
+//        blur.layer?.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 0.4).cgColor
 
         window.contentView = blur
         window.isOpaque = false
@@ -85,6 +97,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         window.hidesOnDeactivate = false
+        
+        let accessoryView = NSView()
+        accessoryView.translatesAutoresizingMaskIntoConstraints = false
+        accessoryView.heightAnchor.constraint(equalToConstant: 28).isActive = true
+
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = accessoryView
+        accessory.layoutAttribute = .top
+
+        window.addTitlebarAccessoryViewController(accessory)
+//
+//        let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 28))
+//        let titlebarAccessory = NSTitlebarAccessoryViewController()
+//        titlebarAccessory.view = accessoryView
+//        titlebarAccessory.layoutAttribute = .top
+//        window.addTitlebarAccessoryViewController(titlebarAccessory)
+//
+//        window.standardWindowButton(.closeButton)?.isHidden = false
+//        window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+//        window.standardWindowButton(.zoomButton)?.isHidden = false
 
         
         window.isMovableByWindowBackground = true
@@ -124,24 +156,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         scrollView.documentView = documentView
 
         inputField = NSTextField()
-        inputField.translatesAutoresizingMaskIntoConstraints = false
+        let inputContainer = NSView()
+        inputContainer.translatesAutoresizingMaskIntoConstraints = false
+        inputContainer.wantsLayer = true
+        inputContainer.layer?.cornerRadius = 12
+        inputContainer.layer?.masksToBounds = true
+        inputContainer.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.8).cgColor
+
         inputField.placeholderString = "Ask something..."
+        inputField.translatesAutoresizingMaskIntoConstraints = false
+        inputField.isBezeled = false
+        inputField.isBordered = false
+        inputField.drawsBackground = false
+        inputField.font = NSFont.systemFont(ofSize: 14)
+        inputField.focusRingType = .none
+        inputField.lineBreakMode = .byTruncatingTail
+        inputField.usesSingleLineMode = true
+
+//        inputField.wantsLayer = true
+//        inputField.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.8)
+//        inputField.layer?.cornerRadius = 12
+//        inputField.layer?.masksToBounds = true
+//        inputField.usesSingleLineMode = true
+        
         inputField.target = self
         inputField.action = #selector(handleInput)
 
         container.addSubview(scrollView)
-        container.addSubview(inputField)
+//        container.addSubview(inputField)
+        container.addSubview(inputContainer)
+        inputContainer.addSubview(inputField)
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            scrollView.bottomAnchor.constraint(equalTo: inputField.topAnchor, constant: -12),
+            scrollView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -12),
+//            scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
+//            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+//            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+//            scrollView.bottomAnchor.constraint(equalTo: inputField.topAnchor, constant: -12),
+            
+            inputField.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
+            inputField.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
+            inputField.topAnchor.constraint(equalTo: inputContainer.topAnchor, constant: 6),
+            inputField.bottomAnchor.constraint(equalTo: inputContainer.bottomAnchor, constant: -6),
+            
+            inputContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            inputContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+            inputContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
 
-            inputField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            inputField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            inputField.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-            inputField.heightAnchor.constraint(equalToConstant: 30),
+//            inputField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+//            inputField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+//            inputField.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
+//            inputField.heightAnchor.constraint(equalToConstant: 30),
 
             messagesStack.topAnchor.constraint(equalTo: documentView.topAnchor),
             messagesStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
@@ -183,7 +251,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         bubble.wantsLayer = true
         bubble.layer?.backgroundColor = isUser
             ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
-            : NSColor.windowBackgroundColor.withAlphaComponent(0.1).cgColor
+//            : NSColor.windowBackgroundColor.withAlphaComponent(0.1).cgColor
+            : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+
         bubble.layer?.cornerRadius = 14
         bubble.layer?.masksToBounds = true
 
@@ -194,10 +264,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         container.addSubview(bubble)
         messagesStack.addArrangedSubview(container)
 
-//        let bubbleMaxWidth: CGFloat = 400
-//        let horizontalInset: CGFloat = 12
-//        let verticalInset: CGFloat = 4
-
         NSLayoutConstraint.activate([
             label.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
             label.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
@@ -206,27 +272,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
-//            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: isUser ? 80 : 20),
-//            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: isUser ? -20 : -80)
         ])
-//        if isUser {
-//            bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 60).isActive = true
-//            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
-//        } else {
-//            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20).isActive = true
-//            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -60).isActive = true
-//        }
-        
         if isUser {
-            NSLayoutConstraint.activate([
-                bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-                bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 60)
-            ])
+            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
+            bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 80).isActive = true
         } else {
-            NSLayoutConstraint.activate([
-                bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-                bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -60)
-            ])
+            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20).isActive = true
+            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -80).isActive = true
         }
     }
 
