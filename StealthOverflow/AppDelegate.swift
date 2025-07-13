@@ -28,11 +28,18 @@ let hotKeyCallback: EventHandlerUPP = { _, eventRef, _ in
     return noErr
 }
 
+extension AppDelegate: NSTextViewDelegate {
+    func textDidEndEditing(_ notification: Notification) {
+        handleInput()
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var window: TransparentPanel!
     var messagesStack: NSStackView!
     var inputField: NSTextField!
 
+    
     func toggleStealthMode() {
         isStealthVisible.toggle()
         if isStealthVisible {
@@ -73,17 +80,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         blur.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
         blur.frame = NSInsetRect(window.contentView!.bounds, 0, -28)
 
-
-//        let blur = NSVisualEffectView(frame: window.contentView!.bounds)
-//        blur.autoresizingMask = [.width, .height]
-//        blur.material = .underWindowBackground
-//        blur.blendingMode = .behindWindow
-//        blur.state = .active
-//        blur.wantsLayer = true
-//        blur.layer?.cornerRadius = 20
-//        blur.layer?.masksToBounds = true
-//        blur.layer?.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 0.4).cgColor
-
         window.contentView = blur
         window.isOpaque = false
         window.hasShadow = false
@@ -107,22 +103,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         accessory.layoutAttribute = .top
 
         window.addTitlebarAccessoryViewController(accessory)
-//
-//        let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 28))
-//        let titlebarAccessory = NSTitlebarAccessoryViewController()
-//        titlebarAccessory.view = accessoryView
-//        titlebarAccessory.layoutAttribute = .top
-//        window.addTitlebarAccessoryViewController(titlebarAccessory)
-//
-//        window.standardWindowButton(.closeButton)?.isHidden = false
-//        window.standardWindowButton(.miniaturizeButton)?.isHidden = false
-//        window.standardWindowButton(.zoomButton)?.isHidden = false
-
         
         window.isMovableByWindowBackground = true
         window.styleMask.insert(.resizable)
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-//        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         setupChatUI(in: blur)
     }
@@ -154,8 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         documentView.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(messagesStack)
         scrollView.documentView = documentView
-
-        inputField = NSTextField()
+        
         let inputContainer = NSView()
         inputContainer.translatesAutoresizingMaskIntoConstraints = false
         inputContainer.wantsLayer = true
@@ -163,8 +146,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         inputContainer.layer?.masksToBounds = true
         inputContainer.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.8).cgColor
 
-        inputField.placeholderString = "Ask something..."
+        inputField = NSTextField()
         inputField.translatesAutoresizingMaskIntoConstraints = false
+        inputField.placeholderString = "Ask something..."
         inputField.isBezeled = false
         inputField.isBordered = false
         inputField.drawsBackground = false
@@ -172,45 +156,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         inputField.focusRingType = .none
         inputField.lineBreakMode = .byTruncatingTail
         inputField.usesSingleLineMode = true
-
-//        inputField.wantsLayer = true
-//        inputField.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.8)
-//        inputField.layer?.cornerRadius = 12
-//        inputField.layer?.masksToBounds = true
-//        inputField.usesSingleLineMode = true
-        
         inputField.target = self
         inputField.action = #selector(handleInput)
+        
+        let sendButton = NSButton(title: "➤", target: self, action: #selector(handleInput))
+        sendButton.translatesAutoresizingMaskIntoConstraints = false
+        sendButton.bezelStyle = .inline
+        sendButton.font = NSFont.systemFont(ofSize: 16)
+        sendButton.setButtonType(.momentaryPushIn)
+        sendButton.isBordered = false
+        sendButton.wantsLayer = true
+        sendButton.contentTintColor = .systemBlue
+        sendButton.toolTip = "Send"
 
         container.addSubview(scrollView)
-//        container.addSubview(inputField)
         container.addSubview(inputContainer)
         inputContainer.addSubview(inputField)
+        inputContainer.addSubview(sendButton)
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
             scrollView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -12),
-//            scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
-//            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-//            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-//            scrollView.bottomAnchor.constraint(equalTo: inputField.topAnchor, constant: -12),
-            
-            inputField.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
-            inputField.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
-            inputField.topAnchor.constraint(equalTo: inputContainer.topAnchor, constant: 6),
-            inputField.bottomAnchor.constraint(equalTo: inputContainer.bottomAnchor, constant: -6),
             
             inputContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             inputContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
             inputContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-
-//            inputField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-//            inputField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-//            inputField.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-//            inputField.heightAnchor.constraint(equalToConstant: 30),
-
+            inputContainer.heightAnchor.constraint(equalToConstant: 36),
+            
+            inputField.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
+            inputField.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
+            inputField.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
+            inputField.heightAnchor.constraint(equalToConstant: 22),
+            
+            sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
+            sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
+            sendButton.widthAnchor.constraint(equalToConstant: 22),
+            sendButton.heightAnchor.constraint(equalToConstant: 22),
+            
             messagesStack.topAnchor.constraint(equalTo: documentView.topAnchor),
             messagesStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
             messagesStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
@@ -233,6 +217,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func addMessage(_ message: String, isUser: Bool) {
         let label = NSTextField(wrappingLabelWithString: message)
+        label.preferredMaxLayoutWidth = CGFloat.greatestFiniteMagnitude
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = NSFont.systemFont(ofSize: 14)
         label.textColor = isUser ? NSColor.white : NSColor.labelColor
@@ -244,6 +229,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 0
         label.alignment = .left
+        
+        DispatchQueue.main.async {
+            label.preferredMaxLayoutWidth = self.messagesStack.frame.width - 20
+        }
 
         // Container view with a subtle background (chat bubble)
         let bubble = NSView()
@@ -251,7 +240,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         bubble.wantsLayer = true
         bubble.layer?.backgroundColor = isUser
             ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
-//            : NSColor.windowBackgroundColor.withAlphaComponent(0.1).cgColor
             : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
 
         bubble.layer?.cornerRadius = 14
@@ -282,7 +270,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    
     func mockResponse(for text: String) -> String {
         return "This is a mock response to: \"\(text)\""
     }
