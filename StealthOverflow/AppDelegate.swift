@@ -64,13 +64,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let blur = NSVisualEffectView(frame: window.contentView!.bounds)
         blur.autoresizingMask = [.width, .height]
-        blur.material = .hudWindow
-        blur.blendingMode = .withinWindow
+        blur.material = .underWindowBackground
+        blur.blendingMode = .behindWindow
         blur.state = .active
         blur.wantsLayer = true
         blur.layer?.cornerRadius = 20
         blur.layer?.masksToBounds = true
-        blur.layer?.backgroundColor = NSColor.clear.cgColor
+        blur.layer?.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 0.4).cgColor
 
         window.contentView = blur
         window.isOpaque = false
@@ -206,8 +206,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
-            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: isUser ? 80 : 20),
-            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: isUser ? -20 : -80)
+//            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: isUser ? 80 : 20),
+//            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: isUser ? -20 : -80)
         ])
 //        if isUser {
 //            bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 60).isActive = true
