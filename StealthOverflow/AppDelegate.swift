@@ -80,126 +80,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         window.styleMask.insert(.resizable)
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
 
-        setupChatUI(in: blur)
+        // setupChatUI(in: blur)
+        let ui = ChatUIBuilder.buildChatUI(in: blur, delegate: self, target: self, sendAction: #selector(handleInput))
+        messagesStack = ui.messagesStack
+        textView = ui.textView
+        inputScroll = ui.inputScroll
+        inputHeightConstraint = ui.inputHeightConstraint
+
+        textDidChange(Notification(name: NSText.didChangeNotification))
+        
         DispatchQueue.main.async {
             self.textView.window?.makeFirstResponder(self.textView)
         }
-    }
-
-    func setupChatUI(in container: NSView) {
-        let scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
-
-        messagesStack = NSStackView()
-        messagesStack.orientation = .vertical
-        messagesStack.alignment = .leading
-        messagesStack.spacing = 8
-        messagesStack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        messagesStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let documentView = NSView()
-        documentView.translatesAutoresizingMaskIntoConstraints = false
-        documentView.addSubview(messagesStack)
-        scrollView.documentView = documentView
-
-        let inputContainer = NSView()
-        inputContainer.translatesAutoresizingMaskIntoConstraints = false
-        inputContainer.wantsLayer = true
-        inputContainer.layer?.cornerRadius = 12
-        inputContainer.layer?.masksToBounds = true
-        inputContainer.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.8).cgColor
-
-        inputScroll = NSScrollView()
-        inputScroll.translatesAutoresizingMaskIntoConstraints = false
-        inputScroll.borderType = .noBorder
-        inputScroll.hasVerticalScroller = true
-        inputScroll.autohidesScrollers = false
-        inputScroll.drawsBackground = false
-        inputScroll.backgroundColor = .clear
-        inputScroll.scrollerStyle = .overlay
-        inputScroll.verticalScrollElasticity = .allowed 
-
-        // textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 32))
-        textView = ChatTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 32))
-        textView.minSize = NSSize(width: 0, height: 32)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.textContainerInset = NSSize(width: 6, height: 6)
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.heightTracksTextView = false
-
-        textView.font = NSFont.systemFont(ofSize: 14)
-        textView.backgroundColor = .clear
-        textView.delegate = self
-        textView.isRichText = false
-        textView.allowsUndo = true
-        textView.isEditable = true
-        textView.isSelectable = true
-        textView.isFieldEditor = false
-        textView.allowsDocumentBackgroundColorChange = true
-        textView.importsGraphics = false
-        textView.usesFindBar = false
-        textView.textColor = .labelColor
-        textView.translatesAutoresizingMaskIntoConstraints = false
-
-        inputScroll.documentView = textView
-
-        let sendButton = NSButton(title: "➤", target: self, action: #selector(handleInput))
-        sendButton.translatesAutoresizingMaskIntoConstraints = false
-        sendButton.bezelStyle = .inline
-        sendButton.font = NSFont.systemFont(ofSize: 16)
-        sendButton.setButtonType(.momentaryPushIn)
-        sendButton.isBordered = false
-        sendButton.wantsLayer = true
-        sendButton.contentTintColor = .systemBlue
-        sendButton.toolTip = "Send"
-
-        container.addSubview(scrollView)
-        container.addSubview(inputContainer)
-        inputContainer.addSubview(inputScroll)
-        inputContainer.addSubview(sendButton)
-
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
-            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            scrollView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -12),
-
-            inputContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            inputContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            inputContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-
-            inputScroll.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
-            inputScroll.topAnchor.constraint(equalTo: inputContainer.topAnchor, constant: 6),
-            inputScroll.bottomAnchor.constraint(equalTo: inputContainer.bottomAnchor, constant: -6),
-            inputScroll.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
-
-            sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
-            sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            sendButton.widthAnchor.constraint(equalToConstant: 22),
-            sendButton.heightAnchor.constraint(equalToConstant: 22),
-
-            messagesStack.topAnchor.constraint(equalTo: documentView.topAnchor),
-            messagesStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
-            messagesStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
-            messagesStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor),
-            messagesStack.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
-            
-            textView.leadingAnchor.constraint(equalTo: inputScroll.contentView.leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: inputScroll.contentView.trailingAnchor),
-            textView.topAnchor.constraint(equalTo: inputScroll.contentView.topAnchor),
-            textView.bottomAnchor.constraint(equalTo: inputScroll.contentView.bottomAnchor),
-        ])
-
-        inputHeightConstraint = inputScroll.heightAnchor.constraint(equalToConstant: 120)
-        inputHeightConstraint.priority = .defaultHigh
-        inputHeightConstraint.isActive = true
-
-        textDidChange(Notification(name: NSText.didChangeNotification))
     }
 
     @objc func handleInput() {

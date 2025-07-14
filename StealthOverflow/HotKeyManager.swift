@@ -2,7 +2,6 @@ import Cocoa
 import Carbon
 
 var hotKeyHandler: EventHandlerRef?
-
 class HotKeyManager {
     private var hotKeyref: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
