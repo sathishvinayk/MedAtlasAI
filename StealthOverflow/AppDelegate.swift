@@ -3,64 +3,10 @@ import Carbon
 
 var isStealthVisible = true
 
-class TransparentPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-
-    override func becomeKey() {
-        super.becomeKey()
-    }
-
-    override func becomeMain()  {
-        super.becomeMain()
-    }
-
-    override var acceptsFirstResponder: Bool {
-        return true
-    }
-
-    override func resignMain() {
-        // Prevent losing focus from closing the window
-    }
-
-    override func resignKey() {
-        // Prevent losing key status from closing the window
-    }
-}
-
-var hotKeyHandler: EventHandlerRef?
-
-let hotKeyCallback: EventHandlerUPP = { _, eventRef, _ in
-    var hotKeyID = EventHotKeyID()
-    GetEventParameter(eventRef,
-                      EventParamName(kEventParamDirectObject),
-                      EventParamType(typeEventHotKeyID),
-                      nil,
-                      MemoryLayout.size(ofValue: hotKeyID),
-                      nil,
-                      &hotKeyID)
-
-    if hotKeyID.id == 1 {
-        DispatchQueue.main.async {
-            NSApp.delegate.map { ($0 as? AppDelegate)?.toggleStealthMode() }
-        }
-    }
-    return noErr
-}
-
-class ChatTextView: NSTextView {
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.contains(.command),
-           event.charactersIgnoringModifiers == "a" {
-            self.selectAll(nil)
-            return true
-        }
-        return super.performKeyEquivalent(with: event)
-    }
-}
-
-
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
+    var chatApiService = ChatApiService()
+
+    var hotKeyManager: HotKeyManager!
     var window: TransparentPanel!
     var messagesStack: NSStackView!
     var textView: NSTextView!
@@ -78,7 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        registerHotKey()
+        hotKeyManager = HotKeyManager()
         setupWindow()
     }
 
@@ -138,15 +84,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         DispatchQueue.main.async {
             self.textView.window?.makeFirstResponder(self.textView)
         }
-    }
-
-    func registerHotKey() {
-        var hotKeyRef: EventHotKeyRef? = nil
-        let hotKeyID = EventHotKeyID(signature: OSType(UInt32(truncatingIfNeeded: "stea".hashValue)), id: 1)
-        RegisterEventHotKey(UInt32(kVK_ANSI_X), UInt32(cmdKey | shiftKey), hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
-
-        let eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), hotKeyCallback, 1, [eventType], nil, &hotKeyHandler)
     }
 
     func setupChatUI(in container: NSView) {
@@ -273,7 +210,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         textView.string = ""
         textDidChange(Notification(name: NSText.didChangeNotification))
 
-        fetchGPTResponse(for: text) { response in
+        chatApiService.fetchGPTResponse(for: text) { response in
             self.addMessage("GPT: \(response)", isUser: false)
         }
     }
@@ -349,68 +286,5 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
             // Allow newline with Shift+Enter
         }
         return false
-    }
-
-    
-    func mockResponse(for text: String) -> String {
-        return "This is a mock response to: \"\(text)\""
-    }
-
-    func fetchGPTResponse(for prompt: String, completion: @escaping (String) -> Void) {
-        let OpenRouterKey = "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"
-        let url = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.addValue("Bearer \(OpenRouterKey)", forHTTPHeaderField: "Authorization")
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let requestBody: [String: Any] = [
-            "model": "mistralai/mistral-7b-instruct",
-            "messages": [
-                ["role": "system", "content": "You are a helpful assistant."],
-                ["role": "user", "content": prompt]
-            ]
-        ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: requestBody)
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                DispatchQueue.main.async {
-                    completion("Network error: \(error.localizedDescription)")
-                }
-                return
-            }
-
-            guard let data = data else {
-                DispatchQueue.main.async {
-                    completion("No data received.")
-                }
-                return
-            }
-
-            // 💡 Print raw response for inspection
-            if let raw = String(data: data, encoding: .utf8) {
-                print("Raw GPT response:\n\(raw)")
-            }
-
-            do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let choices = json["choices"] as? [[String: Any]],
-                   let message = choices.first?["message"] as? [String: Any],
-                   let content = message["content"] as? String {
-                    DispatchQueue.main.async {
-                        completion(content.trimmingCharacters(in: .whitespacesAndNewlines))
-                    }
-                } else {
-                    DispatchQueue.main.async {
-                        completion("Error parsing response (missing expected fields).")
-                    }
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion("JSON parse error: \(error.localizedDescription)")
-                }
-            }
-        }.resume()
-    }
+    }   
 }

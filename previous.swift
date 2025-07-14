@@ -6,6 +6,26 @@ var isStealthVisible = true
 class TransparentPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func becomeKey() {
+        super.becomeKey()
+    }
+
+    override func becomeMain()  {
+        super.becomeMain()
+    }
+
+    override var acceptsFirstResponder: Bool {
+        return true
+    }
+
+    override func resignMain() {
+        // Prevent losing focus from closing the window
+    }
+
+    override func resignKey() {
+        // Prevent losing key status from closing the window
+    }
 }
 
 var hotKeyHandler: EventHandlerRef?
@@ -28,18 +48,25 @@ let hotKeyCallback: EventHandlerUPP = { _, eventRef, _ in
     return noErr
 }
 
-extension AppDelegate: NSTextViewDelegate {
-    func textDidEndEditing(_ notification: Notification) {
-        handleInput()
+class ChatTextView: NSTextView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command),
+           event.charactersIgnoringModifiers == "a" {
+            self.selectAll(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+
+class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     var window: TransparentPanel!
     var messagesStack: NSStackView!
-    var inputField: NSTextField!
+    var textView: NSTextView!
+    var inputScroll: NSScrollView!
+    var inputHeightConstraint: NSLayoutConstraint!
 
-    
     func toggleStealthMode() {
         isStealthVisible.toggle()
         if isStealthVisible {
@@ -50,25 +77,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
         registerHotKey()
+        setupWindow()
+    }
 
+    func setupWindow() {
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let windowWidth: CGFloat = 600
         let windowHeight: CGFloat = 400
-        let windowRect = NSRect(
-            x: screenFrame.midX - (windowWidth / 2),
-            y: screenFrame.midY - (windowHeight / 2),
-            width: windowWidth,
-            height: windowHeight
-        )
+        let windowRect = NSRect(x: screenFrame.midX - windowWidth / 2, y: screenFrame.midY - windowHeight / 2, width: windowWidth, height: windowHeight)
 
         window = TransparentPanel(
-            contentRect: windowRect,
+            contentRect: windowRect, 
             styleMask: [.titled, .resizable, .fullSizeContentView],
-            backing: .buffered,
+            backing: .buffered, 
             defer: false
         )
-        
+
         let blur = NSVisualEffectView(frame: window.contentView!.bounds)
         blur.autoresizingMask = [.width, .height]
         blur.material = .underWindowBackground
@@ -109,6 +135,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
 
         setupChatUI(in: blur)
+        DispatchQueue.main.async {
+            self.textView.window?.makeFirstResponder(self.textView)
+        }
     }
 
     func registerHotKey() {
@@ -138,7 +167,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         documentView.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(messagesStack)
         scrollView.documentView = documentView
-        
+
         let inputContainer = NSView()
         inputContainer.translatesAutoresizingMaskIntoConstraints = false
         inputContainer.wantsLayer = true
@@ -146,19 +175,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         inputContainer.layer?.masksToBounds = true
         inputContainer.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.8).cgColor
 
-        inputField = NSTextField()
-        inputField.translatesAutoresizingMaskIntoConstraints = false
-        inputField.placeholderString = "Ask something..."
-        inputField.isBezeled = false
-        inputField.isBordered = false
-        inputField.drawsBackground = false
-        inputField.font = NSFont.systemFont(ofSize: 14)
-        inputField.focusRingType = .none
-        inputField.lineBreakMode = .byTruncatingTail
-        inputField.usesSingleLineMode = true
-        inputField.target = self
-        inputField.action = #selector(handleInput)
-        
+        inputScroll = NSScrollView()
+        inputScroll.translatesAutoresizingMaskIntoConstraints = false
+        inputScroll.borderType = .noBorder
+        inputScroll.hasVerticalScroller = true
+        inputScroll.autohidesScrollers = false
+        inputScroll.drawsBackground = false
+        inputScroll.backgroundColor = .clear
+        inputScroll.scrollerStyle = .overlay
+        inputScroll.verticalScrollElasticity = .allowed 
+
+        // textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 32))
+        textView = ChatTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 32))
+        textView.minSize = NSSize(width: 0, height: 32)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainerInset = NSSize(width: 6, height: 6)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+
+        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.backgroundColor = .clear
+        textView.delegate = self
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isFieldEditor = false
+        textView.allowsDocumentBackgroundColorChange = true
+        textView.importsGraphics = false
+        textView.usesFindBar = false
+        textView.textColor = .labelColor
+        textView.translatesAutoresizingMaskIntoConstraints = false
+
+        inputScroll.documentView = textView
+
         let sendButton = NSButton(title: "➤", target: self, action: #selector(handleInput))
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         sendButton.bezelStyle = .inline
@@ -171,7 +223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         container.addSubview(scrollView)
         container.addSubview(inputContainer)
-        inputContainer.addSubview(inputField)
+        inputContainer.addSubview(inputScroll)
         inputContainer.addSubview(sendButton)
 
         NSLayoutConstraint.activate([
@@ -179,39 +231,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
             scrollView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -12),
-            
+
             inputContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             inputContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
             inputContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-            inputContainer.heightAnchor.constraint(equalToConstant: 36),
-            
-            inputField.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
-            inputField.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            inputField.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
-            inputField.heightAnchor.constraint(equalToConstant: 22),
-            
+
+            inputScroll.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
+            inputScroll.topAnchor.constraint(equalTo: inputContainer.topAnchor, constant: 6),
+            inputScroll.bottomAnchor.constraint(equalTo: inputContainer.bottomAnchor, constant: -6),
+            inputScroll.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
+
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 22),
             sendButton.heightAnchor.constraint(equalToConstant: 22),
-            
+
             messagesStack.topAnchor.constraint(equalTo: documentView.topAnchor),
             messagesStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
             messagesStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
             messagesStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor),
-            messagesStack.widthAnchor.constraint(equalTo: scrollView.widthAnchor)
+            messagesStack.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            
+            textView.leadingAnchor.constraint(equalTo: inputScroll.contentView.leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: inputScroll.contentView.trailingAnchor),
+            textView.topAnchor.constraint(equalTo: inputScroll.contentView.topAnchor),
+            textView.bottomAnchor.constraint(equalTo: inputScroll.contentView.bottomAnchor),
         ])
+
+        inputHeightConstraint = inputScroll.heightAnchor.constraint(equalToConstant: 120)
+        inputHeightConstraint.priority = .defaultHigh
+        inputHeightConstraint.isActive = true
+
+        textDidChange(Notification(name: NSText.didChangeNotification))
     }
 
     @objc func handleInput() {
-        let text = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
         addMessage("You: \(text)", isUser: true)
-        inputField.stringValue = ""
-        
-        fetchGPTResponse(for: text) {
-            response in self.addMessage("GPT: \(response)", isUser: false)
+        textView.string = ""
+        textDidChange(Notification(name: NSText.didChangeNotification))
+
+        fetchGPTResponse(for: text) { response in
+            self.addMessage("GPT: \(response)", isUser: false)
         }
     }
 
@@ -219,10 +282,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let label = NSTextField(wrappingLabelWithString: message)
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = NSFont.systemFont(ofSize: 14)
-        
-//        label.preferredMaxLayoutWidth = CGFloat.greatestFiniteMagnitude
-        
-        label.textColor = isUser ? NSColor.white : NSColor.labelColor
+        label.textColor = isUser ? .white : .labelColor
         label.backgroundColor = .clear
         label.isBezeled = false
         label.drawsBackground = false
@@ -230,26 +290,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         label.isSelectable = false
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 0
-        
         label.alignment = .left
-        
-//        DispatchQueue.main.async {
-//            label.preferredMaxLayoutWidth = self.messagesStack.frame.width - 20
-//        }
 
-        // Container view with a subtle background (chat bubble)
         let bubble = NSView()
         bubble.translatesAutoresizingMaskIntoConstraints = false
         bubble.wantsLayer = true
+        bubble.layer?.backgroundColor = isUser ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
         bubble.layer?.cornerRadius = 14
         bubble.layer?.masksToBounds = true
-        bubble.layer?.backgroundColor = isUser
-            ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
-            : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
-
-        bubble.layer?.cornerRadius = 14
-        bubble.layer?.masksToBounds = true
-
         bubble.addSubview(label)
 
         let container = NSView()
@@ -265,9 +313,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
-            
             bubble.widthAnchor.constraint(lessThanOrEqualTo: messagesStack.widthAnchor, multiplier: 0.8)
         ])
+
         if isUser {
             bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
             bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 80).isActive = true
@@ -275,6 +323,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20).isActive = true
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -80).isActive = true
         }
+    }
+
+    func textDidChange(_ notification: Notification) {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let newHeight = usedRect.height + textView.textContainerInset.height * 2
+        let clampedHeight = min(max(newHeight, 32), 120)
+
+        inputHeightConstraint.constant = clampedHeight
+    }
+
+    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            let event = NSApp.currentEvent
+            let isShiftPressed = event?.modifierFlags.contains(.shift) ?? false
+
+            if !isShiftPressed {
+                handleInput()
+                return true
+            }
+            // Allow newline with Shift+Enter
+        }
+        return false
     }
 
     
