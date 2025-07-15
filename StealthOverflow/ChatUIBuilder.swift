@@ -21,7 +21,7 @@ struct ChatUIBuilder {
         messagesStack.spacing = 8
         messagesStack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         messagesStack.translatesAutoresizingMaskIntoConstraints = false
-
+        
         let documentView = NSView()
         documentView.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(messagesStack)
@@ -84,16 +84,16 @@ struct ChatUIBuilder {
         inputContainer.addSubview(sendButton)
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 40),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            scrollView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -12),
+            scrollView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -8),
 
             inputContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             inputContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
             inputContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
 
-            inputScroll.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
+            inputScroll.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 14),
             inputScroll.topAnchor.constraint(equalTo: inputContainer.topAnchor, constant: 6),
             inputScroll.bottomAnchor.constraint(equalTo: inputContainer.bottomAnchor, constant: -6),
             inputScroll.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),

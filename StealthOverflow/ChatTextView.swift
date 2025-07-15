@@ -2,8 +2,8 @@ import Cocoa
 
 class ChatTextView: NSTextView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.contains(.command),
-           event.charactersIgnoringModifiers == "a" {
+        let commandOnly = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+        if commandOnly && event.charactersIgnoringModifiers == "a" {
             self.selectAll(nil)
             return true
         }

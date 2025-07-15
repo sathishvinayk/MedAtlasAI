@@ -23,9 +23,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
         hotKeyManager = HotKeyManager()
         setupWindow()
+
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { // Escape key
+                NSApp.terminate(nil)
+                return nil
+            }
+            return event
+        }
     }
 
     func setupWindow() {
@@ -36,7 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
         window = TransparentPanel(
             contentRect: windowRect, 
-            styleMask: [.titled, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .resizable, .fullSizeContentView, .closable, .miniaturizable],
             backing: .buffered, 
             defer: false
         )
@@ -47,10 +54,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         blur.blendingMode = .behindWindow
         blur.state = .active
         blur.wantsLayer = true
-        blur.layer?.cornerRadius = 16
+        blur.layer?.cornerRadius = 8
         blur.layer?.masksToBounds = true
         blur.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
-        blur.frame = NSInsetRect(window.contentView!.bounds, 0, -28)
+        // blur.frame = NSInsetRect(window.contentView!.bounds, 0, -28)
 
         window.contentView = blur
         window.isOpaque = false
@@ -65,6 +72,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         window.hidesOnDeactivate = false
+        window.isMovableByWindowBackground = true
         
         let accessoryView = NSView()
         accessoryView.translatesAutoresizingMaskIntoConstraints = false
@@ -76,7 +84,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
         window.addTitlebarAccessoryViewController(accessory)
         
-        window.isMovableByWindowBackground = true
         window.styleMask.insert(.resizable)
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
 
@@ -108,50 +115,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     }
 
     func addMessage(_ message: String, isUser: Bool) {
-        let label = NSTextField(wrappingLabelWithString: message)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = NSFont.systemFont(ofSize: 14)
-        label.textColor = isUser ? .white : .labelColor
-        label.backgroundColor = .clear
-        label.isBezeled = false
-        label.drawsBackground = false
-        label.isEditable = false
-        label.isSelectable = false
-        label.lineBreakMode = .byWordWrapping
-        label.maximumNumberOfLines = 0
-        label.alignment = .left
-
-        let bubble = NSView()
-        bubble.translatesAutoresizingMaskIntoConstraints = false
-        bubble.wantsLayer = true
-        bubble.layer?.backgroundColor = isUser ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
-        bubble.layer?.cornerRadius = 14
-        bubble.layer?.masksToBounds = true
-        bubble.addSubview(label)
-
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(bubble)
-        messagesStack.addArrangedSubview(container)
-
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
-            label.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
-            label.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 12),
-            label.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -12),
-
-            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
-            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
-            bubble.widthAnchor.constraint(lessThanOrEqualTo: messagesStack.widthAnchor, multiplier: 0.8)
-        ])
-
-        if isUser {
-            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
-            bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 80).isActive = true
-        } else {
-            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20).isActive = true
-            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -80).isActive = true
-        }
+        let messageView = MessageRenderer.renderMessage(message, isUser: isUser)
+        messagesStack.addArrangedSubview(messageView)
     }
 
     func textDidChange(_ notification: Notification) {
@@ -167,6 +132,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        print("Received selector: \(commandSelector)")
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
             let event = NSApp.currentEvent
             let isShiftPressed = event?.modifierFlags.contains(.shift) ?? false
