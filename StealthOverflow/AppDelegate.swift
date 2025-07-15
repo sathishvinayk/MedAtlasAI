@@ -6,7 +6,6 @@ var isStealthVisible = true
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     var chatApiService = ChatApiService()
     var chatController: ChatController!
-    var messageManager: MessageManager!
 
     var hotKeyManager: HotKeyManager!
     var window: TransparentPanel!
@@ -35,23 +34,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         let result = windowManager.createWindow(delegate: nil)
         window = result.window
         
-        let ui = ChatUIBuilder.buildChatUI(in: result.contentView, delegate: self, target: self, sendAction: #selector(handleInput))
+        let ui = ChatUIBuilder.buildChatUI(in: result.contentView, delegate: self, target: self, sendAction: #selector(AppDelegate.handleInput))
         messagesStack = ui.messagesStack
         textView = ui.textView
         inputScroll = ui.inputScroll
         inputHeightConstraint = ui.inputHeightConstraint
-        messageManager = MessageManager(messagesStack: messagesStack)
 
         chatController = ChatController(
-            textView: textView,
             messagesStack: messagesStack,
+            textView: textView,
             inputHeightConstraint: inputHeightConstraint
-        ) { message, isUser in
-            self.messageManager.addMessage(message, isUser: isUser)
-        }
-
-        textDidChange(Notification(name: NSText.didChangeNotification))
-        
+        )
+        chatController.textDidChange()
         DispatchQueue.main.async {
             self.textView.window?.makeFirstResponder(self.textView)
         }
@@ -59,10 +53,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
     @objc func handleInput() {
         chatController.handleInput()
-    }
-
-    func textDidChange(_ notification: Notification) {
-        chatController.updateInputHeight()
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -78,4 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         }
         return false
     }   
+    func textDidChange(_ notification: Notification) {
+        chatController.textDidChange()
+    }
 }

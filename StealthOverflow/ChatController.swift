@@ -2,42 +2,51 @@ import Cocoa
 
 class ChatController {
     private let chatApiService = ChatApiService()
-    private let textView: NSTextView
-    private let messagesStack: NSStackView
-    private let inputHeightConstraint: NSLayoutConstraint
-    private let onNewMessage: (String, Bool) -> Void
+    private let textView: NSTextView?
+    private let messagesStack: NSStackView?
+    private let inputHeightConstraint: NSLayoutConstraint?
+    
 
-    init(textView: NSTextView, messagesStack: NSStackView, inputHeightConstraint: NSLayoutConstraint, onNewMessage: @escaping (String, Bool) -> Void) {
-        self.textView = textView
+    init( messagesStack: NSStackView, textView: NSTextView, 
+        inputHeightConstraint: NSLayoutConstraint?
+    ) {
         self.messagesStack = messagesStack
+        self.textView = textView 
         self.inputHeightConstraint = inputHeightConstraint
-        self.onNewMessage = onNewMessage
     }
 
     func handleInput() {
+        guard let textView = textView else { return }
         let text = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        onNewMessage("You: \(text)", true)
+        addMessage("You: \(text)", isUser:true)
         textView.string = ""
-        updateInputHeight()
+        textDidChange()
 
         chatApiService.fetchGPTResponse(for: text) { response in
             DispatchQueue.main.async {
-                self.onNewMessage("GPT: \(response)", false)
+                self.addMessage("GPT: \(response)", isUser:false)
             }
         }
     }
 
-    func updateInputHeight() {
-        guard let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else { return }
+    private func addMessage(_ message: String, isUser: Bool) {
+        guard let messagesStack = messagesStack else { return }
+        let messageView = MessageRenderer.renderMessage(message, isUser: isUser)
+        messagesStack.addArrangedSubview(messageView)
+    }
+
+    func textDidChange() {
+        guard let textView = textView,
+            let layoutManager = textView.layoutManager,
+            let textContainer = textView.textContainer else { return }
 
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
         let newHeight = usedRect.height + textView.textContainerInset.height * 2
         let clampedHeight = min(max(newHeight, 32), 120)
 
-        inputHeightConstraint.constant = clampedHeight
+        inputHeightConstraint?.constant = clampedHeight
     }
 }
