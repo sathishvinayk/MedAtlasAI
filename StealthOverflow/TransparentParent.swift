@@ -17,10 +17,31 @@ class TransparentPanel: NSPanel {
     }
 
     override func resignMain() {
-        // Prevent losing focus from closing the window
+        super.resignMain()
     }
 
     override func resignKey() {
-        // Prevent losing key status from closing the window
+        super.resignKey()
     }
+    
+    override func mouseDown(with event: NSEvent) {
+        self.makeKeyAndOrderFront(nil)
+        self.makeMain()
+        super.mouseDown(with: event)
+    }
+    
+    private func findTextView(in view: NSView) -> NSTextView? {
+        if let textView = view as? NSTextView {
+            return textView
+        }
+
+        for subview in view.subviews {
+            if let found = findTextView(in: subview) {
+                return found
+            }
+        }
+
+        return nil
+    }
+
 }

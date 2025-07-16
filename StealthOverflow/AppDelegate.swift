@@ -27,6 +27,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         hotKeyManager = HotKeyManager()
         setupWindow()
         KeyboardHandler.monitorEscapeKey()
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self = self else { return }
+            self.window.makeKeyAndOrderFront(nil)
+            self.window.makeFirstResponder(self.textView)
+        }
     }
 
     func setupWindow() {
