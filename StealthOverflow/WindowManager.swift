@@ -29,6 +29,17 @@ class WindowManager {
         window.isMovableByWindowBackground = true
         window.styleMask.insert(.resizable)
 
+        DispatchQueue.main.async {
+            for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                if let btn = window.standardWindowButton(type) {
+                    var frame = btn.frame
+                    frame.origin.x += 4
+                    frame.origin.y -= 4
+                    btn.frame = frame
+                }
+            }
+        }
+
         let blur = NSVisualEffectView(frame: window.contentView!.bounds)
         blur.autoresizingMask = [.width, .height]
         blur.material = .underWindowBackground
