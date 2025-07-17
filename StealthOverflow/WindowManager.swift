@@ -18,8 +18,6 @@ class WindowManager {
         )
         self.panelWindow = window
 
-        window.standardWindowButton(.closeButton)?.target = self
-        window.standardWindowButton(.closeButton)?.action = #selector(closeApp)
         window.isOpaque = false
         window.hasShadow = false
         window.backgroundColor = .clear
@@ -119,10 +117,6 @@ class WindowManager {
         
         UserDefaults.standard.set(value, forKey: "SelectedTransparency")
         applyTransparency(percentString: value)
-    }
-
-    @objc func closeApp() {
-        NSApp.terminate(nil)
     }
 
 
