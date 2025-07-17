@@ -1,6 +1,9 @@
 import Cocoa
 
 class WindowManager {
+    private var panelWindow: NSWindow? // <-- store a reference to the window
+    private var settingsPopover: NSPopover?  // store the active popover
+
     func createWindow(delegate: NSTextViewDelegate?) -> (window: TransparentPanel, contentView: NSView) {
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let windowWidth: CGFloat = 600
@@ -13,6 +16,7 @@ class WindowManager {
             backing: .buffered, 
             defer: false
         )
+        self.panelWindow = window
 
         window.isOpaque = false
         window.hasShadow = false
@@ -49,8 +53,21 @@ class WindowManager {
         blur.layer?.cornerRadius = 8
         blur.layer?.masksToBounds = true
         blur.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
+
+        let gearButton = NSButton(
+            image: NSImage(systemSymbolName: "dial.min", accessibilityDescription: nil)!,
+            target: self, 
+            action: #selector(showTransparencyMenu(_:)) // 👈 change here
+        )
+
+        gearButton.bezelStyle = .inline
+        gearButton.isBordered = false
+        gearButton.imageScaling = .scaleProportionallyUpOrDown
+        gearButton.translatesAutoresizingMaskIntoConstraints = false
+        gearButton.setButtonType(.momentaryChange)
         
         window.contentView = blur
+        window.contentView?.addSubview(gearButton)
         
         let accessoryView = NSView()
         accessoryView.translatesAutoresizingMaskIntoConstraints = false
@@ -61,7 +78,54 @@ class WindowManager {
         accessory.layoutAttribute = .top
 
         window.addTitlebarAccessoryViewController(accessory)
+        if let contentView = window.contentView {
+            NSLayoutConstraint.activate([
+                gearButton.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
+                gearButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+                gearButton.widthAnchor.constraint(equalToConstant: 18),
+                gearButton.heightAnchor.constraint(equalToConstant: 18),
+            ])
+        }
         
         return (window, blur)   
     }
+
+    @objc func showTransparencyMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        
+        let options = ["100%", "90%", "80%", "70%", "60%", "50%"]
+        let saved = UserDefaults.standard.string(forKey: "SelectedTransparency") ?? "100%"
+
+        for option in options {
+            let item = NSMenuItem(title: option, action: #selector(transparencyMenuItemClicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = option
+
+            if option == saved {
+                item.state = .on
+            }
+
+            menu.addItem(item)
+        }
+
+        // Show the menu below the button
+        NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: sender)
+    }
+
+    @objc func transparencyMenuItemClicked(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        
+        UserDefaults.standard.set(value, forKey: "SelectedTransparency")
+        applyTransparency(percentString: value)
+    }
+
+    func applyTransparency(percentString: String) {
+        guard let window = NSApp.windows.first else { return }
+
+        let number = percentString.replacingOccurrences(of: "%", with: "")
+        if let percent = Double(number) {
+            window.alphaValue = percent / 100.0
+        }
+    }
+
 }

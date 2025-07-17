@@ -9,6 +9,15 @@ struct ChatUIBuilder {
     }
 
     static func buildChatUI(in container: NSView, delegate: NSTextViewDelegate, target: AnyObject, sendAction: Selector) -> ChatUI {
+        let titleLabel = NSTextField(labelWithString: "Stealth Interview")
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 18)
+        titleLabel.alignment = .center
+        titleLabel.textColor = .labelColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+
+        container.addSubview(titleLabel)
+
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.borderType = .noBorder
@@ -84,7 +93,10 @@ struct ChatUIBuilder {
         inputContainer.addSubview(sendButton)
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: container.topAnchor, constant: 40),
+            titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            titleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+
+            scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
             scrollView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -8),

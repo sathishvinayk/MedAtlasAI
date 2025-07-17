@@ -4,6 +4,8 @@ import Carbon
 var isStealthVisible = true
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
+    var windowManager: WindowManager!
+
     var chatApiService = ChatApiService()
     var chatController: ChatController!
 
@@ -35,7 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     }
 
     func setupWindow() {
-        let windowManager = WindowManager()
+        windowManager = WindowManager()
         let result = windowManager.createWindow(delegate: nil)
         window = result.window
         
