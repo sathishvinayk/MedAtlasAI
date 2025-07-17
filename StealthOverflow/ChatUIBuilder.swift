@@ -11,12 +11,21 @@ struct ChatUIBuilder {
     static func buildChatUI(in container: NSView, delegate: NSTextViewDelegate, target: AnyObject, sendAction: Selector) -> ChatUI {
         let titleLabel = NSTextField(labelWithString: "Stealth Interview")
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.font = NSFont.boldSystemFont(ofSize: 18)
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 16)
         titleLabel.alignment = .center
         titleLabel.textColor = .labelColor
+        titleLabel.isBezeled = false
+        titleLabel.drawsBackground = false
+        titleLabel.isEditable = false
+        titleLabel.isSelectable = false
         titleLabel.lineBreakMode = .byTruncatingTail
 
+        let divider = NSBox()
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.boxType = .separator
+
         container.addSubview(titleLabel)
+        container.addSubview(divider)
 
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -96,7 +105,12 @@ struct ChatUIBuilder {
             titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
             titleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
 
-            scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
+            divider.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            divider.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 0),
+            divider.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: 0),
+            divider.heightAnchor.constraint(equalToConstant: 1),
+
+            scrollView.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
             scrollView.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -8),

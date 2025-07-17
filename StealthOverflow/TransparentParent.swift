@@ -23,6 +23,11 @@ class TransparentPanel: NSPanel {
     override func resignKey() {
         super.resignKey()
     }
+
+    override func close() {
+        super.close()
+        NSApp.terminate(nil)
+    }
     
     override func mouseDown(with event: NSEvent) {
         self.makeKeyAndOrderFront(nil)

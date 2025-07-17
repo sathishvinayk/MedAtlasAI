@@ -36,6 +36,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         }
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
+    }
+
     func setupWindow() {
         windowManager = WindowManager()
         let result = windowManager.createWindow(delegate: nil)
