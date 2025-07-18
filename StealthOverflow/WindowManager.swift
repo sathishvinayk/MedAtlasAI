@@ -78,8 +78,8 @@ class WindowManager {
         let accessory = NSTitlebarAccessoryViewController()
         accessory.view = accessoryView
         accessory.layoutAttribute = .top
-
         window.addTitlebarAccessoryViewController(accessory)
+
         if let contentView = window.contentView {
             NSLayoutConstraint.activate([
                 gearButton.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),

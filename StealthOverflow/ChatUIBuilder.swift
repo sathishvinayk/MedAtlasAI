@@ -11,7 +11,7 @@ struct ChatUIBuilder {
     static func buildChatUI(in container: NSView, delegate: NSTextViewDelegate, target: AnyObject, sendAction: Selector) -> ChatUI {
         let titleLabel = NSTextField(labelWithString: "Stealth Interview")
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.font = NSFont.boldSystemFont(ofSize: 16)
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 14)
         titleLabel.alignment = .center
         titleLabel.textColor = .labelColor
         titleLabel.isBezeled = false
@@ -102,7 +102,7 @@ struct ChatUIBuilder {
         inputContainer.addSubview(sendButton)
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
             titleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
 
             divider.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),

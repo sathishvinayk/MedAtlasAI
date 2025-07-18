@@ -1,8 +1,8 @@
 import Cocoa
 
 enum MessageRenderer {
-    static func renderMessage(_ message: String, isUser: Bool) -> NSView {
-        let label = NSTextField(wrappingLabelWithString: message)
+    static func renderMessage(_ message: String, isUser: Bool) -> (NSView, NSTextField) {
+        let label = NSTextField(wrappingLabelWithString: message.isEmpty ? "..." : message)
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = NSFont.systemFont(ofSize: 14)
         label.textColor = isUser ? .white : .labelColor
@@ -11,9 +11,17 @@ enum MessageRenderer {
         label.drawsBackground = false
         label.isEditable = false
         label.isSelectable = false
+        label.usesSingleLineMode = false
+        label.allowsDefaultTighteningForTruncation = false
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 0
         label.alignment = .left
+        label.setContentCompressionResistancePriority(.defaultHigh, for: .vertical)
+        label.setContentHuggingPriority(.defaultHigh, for: .vertical)
+
+        if message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            label.stringValue = "..." // so the label renders something
+        }
 
         let bubble = NSView()
         bubble.translatesAutoresizingMaskIntoConstraints = false
@@ -37,6 +45,8 @@ enum MessageRenderer {
 
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+
+            bubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
         ])
 
         if isUser {
@@ -47,6 +57,6 @@ enum MessageRenderer {
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20).isActive = true
         }
 
-        return container
+        return (container, label)
     }
 }
