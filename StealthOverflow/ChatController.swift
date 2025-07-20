@@ -32,54 +32,61 @@ class ChatController {
 
         startStreamingResponse(for: text)
     }
-
     private func processStreamChunk(_ chunk: String) {
         var remainingChunk = chunk
-
+        
         if isInCodeBlock {
             if let closingRange = remainingChunk.range(of: "```") {
                 // Found closing ```
                 let codeContent = remainingChunk[..<closingRange.lowerBound]
                 codeBlockBuffer += codeContent
                 
-                // Add complete code block to buffer
+                // Force as code block if we were in code block mode
                 assistantResponseBuffer.append(NSAttributedString(string: "```\n" + codeBlockBuffer + "\n```"))
                 codeBlockBuffer = ""
                 isInCodeBlock = false
                 
-                // Process remaining text after code block
+                // Process remaining text
                 let remainingText = String(remainingChunk[closingRange.upperBound...])
                 if !remainingText.isEmpty {
                     assistantResponseBuffer.append(NSAttributedString(string: remainingText))
                 }
             } else {
-                // No closing ``` found, buffer the whole chunk
                 codeBlockBuffer += remainingChunk
-            }    
-        } else {
-            if let openingRange = remainingChunk.range(of: "```") {
-                // Found opening ```
-                let textBeforeCode = remainingChunk[..<openingRange.lowerBound]
-                if !textBeforeCode.isEmpty {
-                    print("Flushing text before code: \(textBeforeCode)")
-                    assistantResponseBuffer.append(NSAttributedString(string: String(textBeforeCode)))
-                }
-                
-                isInCodeBlock = true
-                codeBlockBuffer = ""
-                
-                // Process remaining text after opening ```
-                let remainingText = String(remainingChunk[openingRange.upperBound...])
-                if !remainingText.isEmpty {
-                    processStreamChunk(remainingText) // Recursively process
-                }
-            } else {
-                // No code blocks, just append
-                assistantResponseBuffer.append(NSAttributedString(string: remainingChunk))
             }
+        } else {
+            // First check for triple backticks
+            if let openingRange = remainingChunk.range(of: "```") {
+                // Check if it's really triple (not inline)
+                let potentialTriple = remainingChunk[openingRange.lowerBound...]
+                if potentialTriple.count >= 3 && potentialTriple.starts(with: "```") {
+                    // Handle code block
+                    let textBefore = remainingChunk[..<openingRange.lowerBound]
+                    if !textBefore.isEmpty {
+                        assistantResponseBuffer.append(NSAttributedString(string: String(textBefore)))
+                    }
+                    
+                    isInCodeBlock = true
+                    codeBlockBuffer = ""
+                    
+                    let afterTicks = remainingChunk.index(openingRange.lowerBound, offsetBy: 3)
+                    let remaining = String(remainingChunk[afterTicks...])
+                    if !remaining.isEmpty {
+                        processStreamChunk(remaining)
+                    }
+                    return
+                }
+            }
+            
+            // Handle inline code
+            let processed = remainingChunk.replacingOccurrences(
+                of: "`([^`]+)`",
+                with: "`$1`",
+                options: .regularExpression
+            )
+            assistantResponseBuffer.append(NSAttributedString(string: processed))
         }
     }
-
     private func startStreamingResponse(for prompt: String) {
         guard let messagesStack = messagesStack else { return }
 
