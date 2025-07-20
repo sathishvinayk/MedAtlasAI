@@ -1,3 +1,4 @@
+// file chatUIbuilder.swift 
 import Cocoa
 
 struct ChatUIBuilder {

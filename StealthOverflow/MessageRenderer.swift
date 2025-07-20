@@ -18,13 +18,13 @@ func makeCodeBlockView(code: String, maxWidth: CGFloat) -> NSView {
     codeLabel.isSelectable = true
     codeLabel.lineBreakMode = .byWordWrapping
     codeLabel.maximumNumberOfLines = 0
-    codeLabel.preferredMaxLayoutWidth = maxWidth - 40
+    // codeLabel.preferredMaxLayoutWidth = maxWidth - 40
     codeLabel.usesSingleLineMode = false
 
     container.addSubview(codeLabel)
     
-    codeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    codeLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    // codeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    // codeLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
 
     container.translatesAutoresizingMaskIntoConstraints = false
@@ -60,7 +60,7 @@ enum MessageRenderer {
         bubble.layer?.backgroundColor = isUser
             ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
             : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
-        bubble.layer?.cornerRadius = 14
+        bubble.layer?.cornerRadius = 10
         bubble.layer?.masksToBounds = true
 
         container.addSubview(bubble)
@@ -86,7 +86,7 @@ enum MessageRenderer {
             else {
                 let label = NSTextField(wrappingLabelWithString: segment.content)
                 label.translatesAutoresizingMaskIntoConstraints = false
-                label.preferredMaxLayoutWidth = maxWidth - 40
+                // label.preferredMaxLayoutWidth = maxWidth - 40
                 label.font = NSFont.systemFont(ofSize: 14)
                 label.textColor = isUser ? .white : .labelColor
                 label.backgroundColor = .clear
@@ -97,32 +97,35 @@ enum MessageRenderer {
                 label.lineBreakMode = .byWordWrapping
                 label.maximumNumberOfLines = 0
                 label.alignment = .left
-                label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-                label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+                // label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+                // label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
                 stack.addArrangedSubview(label)
+                NSLayoutConstraint.activate([
+                    stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
+                    stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 8),
+                    stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 12),
+                    stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -12),
+
+                    bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+                    bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14),
+                ])
             }
         }
 
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
-            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -12),
+        // NSLayoutConstraint.activate([
+        //     bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 0),
+        //     bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: 0),
 
-            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
-            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2),
-
-            // bubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
-        ])
+        //     // bubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
+        // ])
 
         if isUser {
             bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor).isActive = true
             bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
         } else {
-            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 0).isActive = true
-            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
-//            bubble.widthAnchor.constraint(lessThanOrEqualToConstant: 640).isActive = true
+            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
+            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20).isActive = true
         }
 
         return (container, bubble)
