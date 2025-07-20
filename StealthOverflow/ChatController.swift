@@ -1,3 +1,4 @@
+// file chatcontroller.swift
 import Cocoa
 
 class ChatController {
@@ -5,9 +6,12 @@ class ChatController {
     private let textView: NSTextView?
     private let messagesStack: NSStackView?
     private let inputHeightConstraint: NSLayoutConstraint?
-    private var currentAssistantLabel: NSTextField?
+    private var currentAssistantBubble: NSView?
     private var typingIndicator: TypingIndicatorView?
     private var assistantResponseBuffer = NSMutableAttributedString()
+
+    private var isInCodeBlock = false
+    private var codeBlockBuffer = ""
 
     init( messagesStack: NSStackView, textView: NSTextView, 
         inputHeightConstraint: NSLayoutConstraint?
@@ -29,56 +33,131 @@ class ChatController {
         startStreamingResponse(for: text)
     }
 
-    private func startStreamingResponse(for prompt: String) {
-    guard let messagesStack = messagesStack else { return }
+    private func processStreamChunk(_ chunk: String) {
+        var remainingChunk = chunk
 
-    // Step 1: Show typing indicator
-    let indicator = TypingIndicatorView()
-    messagesStack.addArrangedSubview(indicator)
-    typingIndicator = indicator
-    currentAssistantLabel = nil // Reset any previous state
-
-    chatApiService.fetchGPTResponse(for: prompt) { [weak self] chunk in
-        DispatchQueue.main.async {
-            guard let self = self else { return }
-
-            // Step 4: Handle stream done
-            if chunk == "[STREAM_DONE]" {
-                self.typingIndicator?.removeFromSuperview()
-                self.typingIndicator?.stopAnimating()
-                self.typingIndicator = nil
-                self.currentAssistantLabel = nil
-                self.assistantResponseBuffer = NSMutableAttributedString()
-                return
+        if isInCodeBlock {
+            if let closingRange = remainingChunk.range(of: "```") {
+                // Found closing ```
+                let codeContent = remainingChunk[..<closingRange.lowerBound]
+                codeBlockBuffer += codeContent
+                
+                // Add complete code block to buffer
+                assistantResponseBuffer.append(NSAttributedString(string: "```\n" + codeBlockBuffer + "\n```"))
+                codeBlockBuffer = ""
+                isInCodeBlock = false
+                
+                // Process remaining text after code block
+                let remainingText = String(remainingChunk[closingRange.upperBound...])
+                if !remainingText.isEmpty {
+                    assistantResponseBuffer.append(NSAttributedString(string: remainingText))
+                }
+            } else {
+                // No closing ``` found, buffer the whole chunk
+                codeBlockBuffer += remainingChunk
+            }    
+        } else {
+            if let openingRange = remainingChunk.range(of: "```") {
+                // Found opening ```
+                let textBeforeCode = remainingChunk[..<openingRange.lowerBound]
+                if !textBeforeCode.isEmpty {
+                    print("Flushing text before code: \(textBeforeCode)")
+                    assistantResponseBuffer.append(NSAttributedString(string: String(textBeforeCode)))
+                }
+                
+                isInCodeBlock = true
+                codeBlockBuffer = ""
+                
+                // Process remaining text after opening ```
+                let remainingText = String(remainingChunk[openingRange.upperBound...])
+                if !remainingText.isEmpty {
+                    processStreamChunk(remainingText) // Recursively process
+                }
+            } else {
+                // No code blocks, just append
+                assistantResponseBuffer.append(NSAttributedString(string: remainingChunk))
             }
-
-            // Step 2: Ignore whitespace-only chunks
-            let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedChunk.isEmpty else { return }
-
-            // Step 2 (continued): If assistant label not yet set, create one
-            if self.currentAssistantLabel == nil {
-                self.typingIndicator?.removeFromSuperview()
-                self.typingIndicator?.stopAnimating()
-                self.typingIndicator = nil
-
-                let (bubble, label) = MessageRenderer.renderMessage("", isUser: false)
-                messagesStack.addArrangedSubview(bubble)
-                self.currentAssistantLabel = label
-            }
-
-            // Step 3: Append chunk
-            guard let label = self.currentAssistantLabel else { return }
-
-            let attributedChunk = NSAttributedString(string: chunk, attributes: [
-                .font: label.font ?? NSFont.systemFont(ofSize: 14),
-                .foregroundColor: NSColor.labelColor
-            ])
-            self.assistantResponseBuffer.append(attributedChunk)
-            label.attributedStringValue = self.assistantResponseBuffer
         }
     }
-}
+
+    private func startStreamingResponse(for prompt: String) {
+        guard let messagesStack = messagesStack else { return }
+
+        // Step 1: Show typing indicator
+        let indicator = TypingIndicatorView()
+        messagesStack.addArrangedSubview(indicator)
+        typingIndicator = indicator
+        currentAssistantBubble = nil // Reset any previous state
+        assistantResponseBuffer = NSMutableAttributedString()
+
+        var placeholderBubble: NSView?
+
+        chatApiService.fetchGPTResponse(for: prompt) { [weak self] chunk in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+
+                // Step 4: Stream completed
+                if chunk == "[STREAM_DONE]" {
+                    // Handle any remaining buffered code content
+                    if self.isInCodeBlock && !self.codeBlockBuffer.isEmpty {
+                        self.assistantResponseBuffer.append(NSAttributedString(string: "```\n" + self.codeBlockBuffer + "\n```"))
+                        self.codeBlockBuffer = ""
+                        self.isInCodeBlock = false
+                    }
+                    self.typingIndicator?.removeFromSuperview()
+                    self.typingIndicator?.stopAnimating()
+                    self.typingIndicator = nil
+
+                    if let placeholder = placeholderBubble {
+                        self.messagesStack?.removeArrangedSubview(placeholder)
+                        placeholder.removeFromSuperview()
+                        placeholderBubble = nil
+                    }
+
+                    // Insert final bubble if needed
+                    let finalText = self.assistantResponseBuffer.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !finalText.isEmpty {
+                        let (bubble, _) = MessageRenderer.renderMessage(finalText, isUser: false)
+                        self.messagesStack?.addArrangedSubview(bubble)
+                        self.currentAssistantBubble = bubble
+                    }
+
+                    return
+                }
+
+                self.processStreamChunk(chunk)
+
+                // Step 2: Skip empty chunks
+                let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedChunk.isEmpty else { return }
+
+                // Step 3: First time — create placeholder bubble
+                if placeholderBubble == nil {
+                    self.typingIndicator?.removeFromSuperview()
+                    self.typingIndicator?.stopAnimating()
+                    self.typingIndicator = nil
+
+                    let (bubble, _) = MessageRenderer.renderMessage("...", isUser: false)
+                    messagesStack.addArrangedSubview(bubble)
+                    placeholderBubble = bubble
+                }
+
+                // Optional: live update placeholder if you want to show partial stream
+                if let bubble = placeholderBubble {
+                    self.messagesStack?.removeArrangedSubview(bubble)
+                    bubble.removeFromSuperview()
+                    
+                    // Use the properly processed buffer
+                    let (newBubble, _) = MessageRenderer.renderMessage(
+                        self.assistantResponseBuffer.string, 
+                        isUser: false
+                    )
+                    self.messagesStack?.addArrangedSubview(newBubble)
+                    placeholderBubble = newBubble
+                }
+            }
+        }
+    }
 
 
     private func addMessage(_ message: String, isUser: Bool) {
@@ -87,7 +166,7 @@ class ChatController {
         messagesStack.addArrangedSubview(messageContainer)
 
         if !isUser {
-            currentAssistantLabel = messageLabel
+            currentAssistantBubble = messageLabel
         }
     }
 
