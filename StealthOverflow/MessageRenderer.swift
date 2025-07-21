@@ -1,7 +1,7 @@
 // file MessageRenderer.swift
 import Cocoa
 
-let maxWidth: CGFloat = 480  // or whatever width you use for your bubbles
+// let maxWidth: CGFloat = 480  // or whatever width you use for your bubbles
 
 func makeCodeBlockView(code: String, maxWidth: CGFloat) -> NSView {
     let container = NSView()
@@ -34,9 +34,10 @@ func makeCodeBlockView(code: String, maxWidth: CGFloat) -> NSView {
         codeLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
         codeLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
 
-        container.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
-        // codeLabel.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth - 40),
         // container.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
+        // codeLabel.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth - 40),
+        // container.leadingAnchor.constraint(equalTo: bubble.leadingAnchor).isActive = true
+        // container.trailingAnchor.constraint(equalTo: bubble.trailingAnchor).isActive = true
     ])
 
     return container
@@ -103,31 +104,28 @@ enum MessageRenderer {
                 // label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
                 stack.addArrangedSubview(label)
-                NSLayoutConstraint.activate([
-                    stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
-                    stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 8),
-                    stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 12),
-                    stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -12),
-
-                    bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
-                    bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14),
-                ])
+                
             }
         }
 
-        // NSLayoutConstraint.activate([
-        //     bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 0),
-        //     bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: 0),
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 8),
+            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -12),
 
-        //     // bubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
-        // ])
+            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14),
+        ])
 
         if isUser {
             bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor).isActive = true
             bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
         } else {
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
-            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
+            // bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
+            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20).isActive = true
+            bubble.widthAnchor.constraint(lessThanOrEqualToConstant: (NSScreen.main?.frame.width ?? 800) - 40).isActive = true
         }
 
         return (container, bubble)
