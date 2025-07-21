@@ -23,9 +23,8 @@ func makeCodeBlockView(code: String, maxWidth: CGFloat) -> NSView {
 
     container.addSubview(codeLabel)
     
-    // codeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    // codeLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-
+    codeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    codeLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
     container.translatesAutoresizingMaskIntoConstraints = false
 
@@ -35,6 +34,7 @@ func makeCodeBlockView(code: String, maxWidth: CGFloat) -> NSView {
         codeLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
         codeLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
 
+        container.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
         // codeLabel.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth - 40),
         // container.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
     ])
@@ -52,7 +52,7 @@ enum MessageRenderer {
         container.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let bubble = NSView()
-        let maxBubbleWidth: CGFloat = 500
+        let maxBubbleWidth = NSScreen.main?.frame.width ?? 500
         bubble.translatesAutoresizingMaskIntoConstraints = false
         bubble.setContentHuggingPriority(.defaultLow, for: .horizontal)
         bubble.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -71,7 +71,9 @@ enum MessageRenderer {
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.distribution = .fill
         stack.alignment = .leading
-        stack.setHuggingPriority(.required, for: .horizontal)
+        // stack.setHuggingPriority(.required, for: .horizontal)
+        stack.setHuggingPriority(.defaultLow, for: .horizontal)
+        stack.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
         bubble.addSubview(stack)
 
@@ -125,7 +127,7 @@ enum MessageRenderer {
             bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
         } else {
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
-            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20).isActive = true
+            bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
         }
 
         return (container, bubble)
