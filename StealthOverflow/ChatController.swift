@@ -33,7 +33,7 @@ class ChatController {
         startStreamingResponse(for: text)
     }
     private func processStreamChunk(_ chunk: String) {
-        var remainingChunk = chunk
+        let remainingChunk = chunk
         
         if isInCodeBlock {
             if let closingRange = remainingChunk.range(of: "```") {

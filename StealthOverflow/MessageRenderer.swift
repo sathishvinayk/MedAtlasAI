@@ -1,70 +1,28 @@
 // file MessageRenderer.swift
 import Cocoa
 
-// let maxWidth: CGFloat = 480  // or whatever width you use for your bubbles
-
-func makeCodeBlockView(code: String, maxWidth: CGFloat) -> NSView {
-    let container = NSView()
-    container.wantsLayer = true
-    container.layer?.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 1.0).cgColor
-    container.layer?.cornerRadius = 6
-    container.translatesAutoresizingMaskIntoConstraints = false
-
-    let codeLabel = NSTextField(labelWithString: code)
-    codeLabel.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    codeLabel.translatesAutoresizingMaskIntoConstraints = false
-    codeLabel.textColor = NSColor.white
-    codeLabel.backgroundColor = .clear
-    codeLabel.isSelectable = true
-    codeLabel.lineBreakMode = .byWordWrapping
-    codeLabel.maximumNumberOfLines = 0
-    // codeLabel.preferredMaxLayoutWidth = maxWidth - 40
-    codeLabel.usesSingleLineMode = false
-
-    container.addSubview(codeLabel)
-    
-    codeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    codeLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-
-    container.translatesAutoresizingMaskIntoConstraints = false
-
-    NSLayoutConstraint.activate([
-        codeLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
-        codeLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
-        codeLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-        codeLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
-
-        // container.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
-        // codeLabel.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth - 40),
-        // container.leadingAnchor.constraint(equalTo: bubble.leadingAnchor).isActive = true
-        // container.trailingAnchor.constraint(equalTo: bubble.trailingAnchor).isActive = true
-    ])
-
-    return container
-}
-
 enum MessageRenderer {
     static func renderMessage(_ message: String, isUser: Bool) -> (NSView, NSView) {
+        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 800) * 0.65
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
         container.layer?.masksToBounds = false
-        container.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        container.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        container.setContentHuggingPriority(.defaultLow, for: .vertical)
+        container.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
         let bubble = NSView()
-        let maxBubbleWidth = NSScreen.main?.frame.width ?? 500
         bubble.translatesAutoresizingMaskIntoConstraints = false
-        bubble.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        bubble.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        bubble.setContentHuggingPriority(.defaultLow, for: .vertical)
+        bubble.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         bubble.wantsLayer = true
         bubble.layer?.backgroundColor = isUser
             ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
             : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
         bubble.layer?.cornerRadius = 10
         bubble.layer?.masksToBounds = true
-
         container.addSubview(bubble)
+        bubble.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth).isActive = true
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -83,13 +41,45 @@ enum MessageRenderer {
 
         for segment in segments {
             if segment.isCode {
-                let codeView = makeCodeBlockView(code: segment.content, maxWidth: maxBubbleWidth)
-                stack.addArrangedSubview(codeView)
+                let container = NSView()
+                container.wantsLayer = true
+                container.layer?.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 1.0).cgColor
+                container.layer?.cornerRadius = 6
+                container.translatesAutoresizingMaskIntoConstraints = false
+                
+                let textView = NSTextView()
+                textView.string = segment.content
+                textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+                textView.textColor = .white
+                textView.backgroundColor = .clear
+                textView.isEditable = false
+                textView.isSelectable = true
+                textView.drawsBackground = false
+                textView.textContainerInset = NSSize(width: 6, height: 6)
+                textView.translatesAutoresizingMaskIntoConstraints = false
+                textView.textContainer?.widthTracksTextView = true
+                textView.textContainer?.heightTracksTextView = true
+                textView.textContainer?.lineBreakMode = .byWordWrapping
+
+                container.addSubview(textView)
+
+                NSLayoutConstraint.activate([
+                    textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                    textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                    textView.topAnchor.constraint(equalTo: container.topAnchor),
+                    textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+                    textView.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
+                ])
+
+                textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+                let height = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
+                textView.heightAnchor.constraint(equalToConstant: height + 12).isActive = true
+
+                stack.addArrangedSubview(container)
             }
             else {
                 let label = NSTextField(wrappingLabelWithString: segment.content)
                 label.translatesAutoresizingMaskIntoConstraints = false
-                // label.preferredMaxLayoutWidth = maxWidth - 40
                 label.font = NSFont.systemFont(ofSize: 14)
                 label.textColor = isUser ? .white : .labelColor
                 label.backgroundColor = .clear
@@ -100,23 +90,25 @@ enum MessageRenderer {
                 label.lineBreakMode = .byWordWrapping
                 label.maximumNumberOfLines = 0
                 label.alignment = .left
-                // label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-                // label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-
-                stack.addArrangedSubview(label)
+                label.setContentHuggingPriority(.defaultLow, for: .vertical)
+                label.setContentCompressionResistancePriority(.required, for: .vertical)
+                label.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth).isActive = true
+                label.preferredMaxLayoutWidth = maxWidth - 30
                 
+                stack.addArrangedSubview(label)
             }
         }
-
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 10),
             stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -12),
+            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
 
+            // bubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
-            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14),
+            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
         ])
+
 
         if isUser {
             bubble.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor).isActive = true
@@ -125,7 +117,7 @@ enum MessageRenderer {
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
             // bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20).isActive = true
-            bubble.widthAnchor.constraint(lessThanOrEqualToConstant: (NSScreen.main?.frame.width ?? 800) - 40).isActive = true
+            // bubble.widthAnchor.constraint(lessThanOrEqualToConstant: (NSScreen.main?.frame.width ?? 800) - 40).isActive = true
         }
 
         return (container, bubble)
