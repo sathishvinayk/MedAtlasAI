@@ -3,7 +3,7 @@ import Cocoa
 
 enum MessageRenderer {
     static func renderMessage(_ message: String, isUser: Bool) -> (NSView, NSView) {
-        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 800) * 0.65
+        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 500) * 0.65
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
@@ -31,8 +31,8 @@ enum MessageRenderer {
         stack.distribution = .fill
         stack.alignment = .leading
         // stack.setHuggingPriority(.required, for: .horizontal)
-        stack.setHuggingPriority(.defaultLow, for: .horizontal)
-        stack.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        stack.setHuggingPriority(.defaultLow, for: .vertical)
+        stack.setContentCompressionResistancePriority(.defaultHigh, for: .vertical)
 
         bubble.addSubview(stack)
 
@@ -73,7 +73,7 @@ enum MessageRenderer {
 
                 textView.layoutManager?.ensureLayout(for: textView.textContainer!)
                 let height = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
-                textView.heightAnchor.constraint(equalToConstant: height + 12).isActive = true
+                textView.heightAnchor.constraint(greaterThanOrEqualToConstant: height + 12).isActive = true
 
                 stack.addArrangedSubview(container)
             }
@@ -93,7 +93,7 @@ enum MessageRenderer {
                 label.setContentHuggingPriority(.defaultLow, for: .vertical)
                 label.setContentCompressionResistancePriority(.required, for: .vertical)
                 label.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth).isActive = true
-                label.preferredMaxLayoutWidth = maxWidth - 30
+//                label.preferredMaxLayoutWidth = maxWidth - 30
                 
                 stack.addArrangedSubview(label)
             }
@@ -117,7 +117,6 @@ enum MessageRenderer {
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
             // bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20).isActive = true
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20).isActive = true
-            // bubble.widthAnchor.constraint(lessThanOrEqualToConstant: (NSScreen.main?.frame.width ?? 800) - 40).isActive = true
         }
 
         return (container, bubble)
