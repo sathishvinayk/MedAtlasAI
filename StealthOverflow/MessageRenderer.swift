@@ -54,7 +54,7 @@ enum MessageRenderer {
                 textView.backgroundColor = .clear
                 textView.isEditable = false
                 textView.isSelectable = true
-                textView.drawsBackground = false
+                textView.drawsBackground = true
                 textView.textContainerInset = NSSize(width: 6, height: 6)
                 textView.translatesAutoresizingMaskIntoConstraints = false
                 textView.textContainer?.widthTracksTextView = true
