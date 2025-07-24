@@ -51,29 +51,39 @@ enum MessageRenderer {
                 textView.string = segment.content
                 textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
                 textView.textColor = .white
-                textView.backgroundColor = .clear
+                textView.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 1.0)
                 textView.isEditable = false
                 textView.isSelectable = true
                 textView.drawsBackground = true
-                textView.textContainerInset = NSSize(width: 6, height: 6)
+                textView.textContainerInset = NSSize(width: 8, height: 8)
                 textView.translatesAutoresizingMaskIntoConstraints = false
+
                 textView.textContainer?.widthTracksTextView = true
-                textView.textContainer?.heightTracksTextView = true
+                textView.textContainer?.heightTracksTextView = false
+
                 textView.textContainer?.lineBreakMode = .byWordWrapping
+
+                textView.setContentHuggingPriority(.defaultLow, for: .vertical)
+                textView.setContentCompressionResistancePriority(.required, for: .vertical)
 
                 container.addSubview(textView)
 
+                textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+                let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? NSRect.zero
+                let textHeight = usedRect.height + 16  // Add padding
+                
                 NSLayoutConstraint.activate([
                     textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                     textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
                     textView.topAnchor.constraint(equalTo: container.topAnchor),
                     textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-                    textView.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
+                    textView.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
+                    container.heightAnchor.constraint(equalToConstant: textHeight)
                 ])
 
-                textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-                let height = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
-                textView.heightAnchor.constraint(greaterThanOrEqualToConstant: height + 12).isActive = true
+                // textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+                // let height = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
+                // textView.heightAnchor.constraint(greaterThanOrEqualToConstant: height + 12).isActive = true
 
                 stack.addArrangedSubview(container)
             }
