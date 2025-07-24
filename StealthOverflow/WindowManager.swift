@@ -6,8 +6,8 @@ class WindowManager {
 
     func createWindow(delegate: NSTextViewDelegate?) -> (window: TransparentPanel, contentView: NSView) {
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let windowWidth: CGFloat = 600
-        let windowHeight: CGFloat = 400
+        let windowWidth: CGFloat = 800
+        let windowHeight: CGFloat = 600
         let windowRect = NSRect(x: screenFrame.midX - windowWidth / 2, y: screenFrame.midY - windowHeight / 2, width: windowWidth, height: windowHeight)
 
         let window = TransparentPanel(
