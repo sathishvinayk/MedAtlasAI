@@ -3,7 +3,7 @@ import Cocoa
 
 enum MessageRenderer {
     static func renderMessage(_ message: String, isUser: Bool) -> (NSView, NSView) {
-        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 500) * 0.65
+        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 800) * 0.65
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
@@ -18,7 +18,7 @@ enum MessageRenderer {
         bubble.wantsLayer = true
         bubble.layer?.backgroundColor = isUser
             ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
-            : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+            : NSColor.controlBackgroundColor.withAlphaComponent(0.2).cgColor
         bubble.layer?.cornerRadius = 10
         bubble.layer?.masksToBounds = true
         container.addSubview(bubble)
@@ -60,8 +60,14 @@ enum MessageRenderer {
 
                 textView.textContainer?.widthTracksTextView = true
                 textView.textContainer?.heightTracksTextView = false
+                textView.textContainer?.lineFragmentPadding = 0
 
                 textView.textContainer?.lineBreakMode = .byWordWrapping
+                
+                textView.isVerticallyResizable = true
+                textView.isHorizontallyResizable = false
+                textView.minSize = NSSize(width: 0, height: 0)
+                textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
                 textView.setContentHuggingPriority(.defaultLow, for: .vertical)
                 textView.setContentCompressionResistancePriority(.required, for: .vertical)
@@ -70,15 +76,18 @@ enum MessageRenderer {
 
                 textView.layoutManager?.ensureLayout(for: textView.textContainer!)
                 let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? NSRect.zero
-                let textHeight = usedRect.height + 16  // Add padding
-                
+                let contentHeight = usedRect.height + 10
+
+                let totalHeight = contentHeight + textView.textContainerInset.height
+
                 NSLayoutConstraint.activate([
                     textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                     textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
                     textView.topAnchor.constraint(equalTo: container.topAnchor),
                     textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
                     textView.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
-                    container.heightAnchor.constraint(equalToConstant: textHeight)
+                    container.heightAnchor.constraint(greaterThanOrEqualToConstant: totalHeight),
+                    textView.heightAnchor.constraint(greaterThanOrEqualToConstant: contentHeight)
                 ])
 
                 // textView.layoutManager?.ensureLayout(for: textView.textContainer!)
