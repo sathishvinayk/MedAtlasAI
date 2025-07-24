@@ -26,7 +26,7 @@ class ChatController {
         let text = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        addMessage("You: \(text)", isUser:true)
+        addMessage("\(text)", isUser:true)
         textView.string = ""
         textDidChange()
 

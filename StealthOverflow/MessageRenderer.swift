@@ -76,7 +76,7 @@ enum MessageRenderer {
 
                 textView.layoutManager?.ensureLayout(for: textView.textContainer!)
                 let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? NSRect.zero
-                let contentHeight = usedRect.height + 10
+                let contentHeight = usedRect.height + 20
 
                 let totalHeight = contentHeight + textView.textContainerInset.height
 
@@ -120,11 +120,11 @@ enum MessageRenderer {
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
             stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 10),
-            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
             stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
 
             // bubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
-            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
         ])
 
