@@ -23,6 +23,9 @@ final class CodeBlockView: NSView {
         textView.textContainer?.widthTracksTextView = true
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.string = code
+        textView.setContentHuggingPriority(.required, for: .vertical)
+        textView.setContentCompressionResistancePriority(.required, for: .vertical)
+
 
         addSubview(textView)
 
@@ -66,7 +69,7 @@ final class CodeBlockView: NSView {
 
 enum MessageRenderer {
     static func renderMessage(_ message: String, isUser: Bool) -> (NSView, NSView) {
-        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 800) * 0.65
+        let maxWidth = (NSScreen.main?.visibleFrame.width ?? 800) * 1
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
