@@ -18,7 +18,7 @@ enum MessageRenderer {
         bubble.wantsLayer = true
         bubble.layer?.backgroundColor = isUser
             ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
-            : NSColor.controlBackgroundColor.withAlphaComponent(0.2).cgColor
+            : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
         bubble.layer?.cornerRadius = 10
         bubble.layer?.masksToBounds = true
         container.addSubview(bubble)
@@ -51,48 +51,29 @@ enum MessageRenderer {
                 textView.string = segment.content
                 textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
                 textView.textColor = .white
-                textView.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 1.0)
+                textView.backgroundColor = .clear
                 textView.isEditable = false
                 textView.isSelectable = true
-                textView.drawsBackground = true
-                textView.textContainerInset = NSSize(width: 8, height: 8)
+                textView.drawsBackground = false
+                textView.textContainerInset = NSSize(width: 6, height: 6)
                 textView.translatesAutoresizingMaskIntoConstraints = false
-
                 textView.textContainer?.widthTracksTextView = true
-                textView.textContainer?.heightTracksTextView = false
-                textView.textContainer?.lineFragmentPadding = 0
-
+                textView.textContainer?.heightTracksTextView = true
                 textView.textContainer?.lineBreakMode = .byWordWrapping
-                
-                textView.isVerticallyResizable = true
-                textView.isHorizontallyResizable = false
-                textView.minSize = NSSize(width: 0, height: 0)
-                textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-
-                textView.setContentHuggingPriority(.defaultLow, for: .vertical)
-                textView.setContentCompressionResistancePriority(.required, for: .vertical)
 
                 container.addSubview(textView)
-
-                textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-                let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? NSRect.zero
-                let contentHeight = usedRect.height + 20
-
-                let totalHeight = contentHeight + textView.textContainerInset.height
 
                 NSLayoutConstraint.activate([
                     textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                     textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
                     textView.topAnchor.constraint(equalTo: container.topAnchor),
                     textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-                    textView.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
-                    container.heightAnchor.constraint(greaterThanOrEqualToConstant: totalHeight),
-                    textView.heightAnchor.constraint(greaterThanOrEqualToConstant: contentHeight)
+                    textView.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
                 ])
 
-                // textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-                // let height = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
-                // textView.heightAnchor.constraint(greaterThanOrEqualToConstant: height + 12).isActive = true
+                textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+                let height = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
+                textView.heightAnchor.constraint(greaterThanOrEqualToConstant: height + 20).isActive = true
 
                 stack.addArrangedSubview(container)
             }
@@ -118,13 +99,13 @@ enum MessageRenderer {
             }
         }
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
+            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 6),
             stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 10),
             stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
             stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
 
             // bubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
-            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
         ])
 
