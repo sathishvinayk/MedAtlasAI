@@ -83,7 +83,6 @@ class ChatApiService: NSObject, URLSessionDataDelegate {
                     // 🧼 Remove handler after done
                     taskToHandler.removeValue(forKey: dataTask)
                     return
-                    return
                 }
 
                 if let jsonData = jsonString.data(using: .utf8),

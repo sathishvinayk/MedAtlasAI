@@ -1,6 +1,69 @@
 // file MessageRenderer.swift
 import Cocoa
 
+final class CodeBlockView: NSView {
+    private let textView = NSTextView()
+
+    init(code: String, maxWidth: CGFloat) {
+        print("CODE BLOCK: \(code)")
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.9).cgColor
+        layer?.cornerRadius = 6
+
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textColor = .white
+        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.textContainerInset = NSSize(width: 8, height: 6)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        textView.string = code
+
+        addSubview(textView)
+
+        NSLayoutConstraint.activate([
+            textView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 0),
+            textView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 0),
+            textView.topAnchor.constraint(equalTo: topAnchor, constant: 0),
+            textView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
+            widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
+        ])
+        
+        textView.sizeToFit()
+        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+
+        let textHeight = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
+        heightAnchor.constraint(equalToConstant: textHeight + 12).isActive = true
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updateHeight),
+            name: NSView.frameDidChangeNotification,
+            object: textView
+        )
+    }
+    
+    @objc private func updateHeight() {
+        guard let container = textView.textContainer,
+              let layoutManager = textView.layoutManager else { return }
+
+        layoutManager.ensureLayout(for: container)
+        let usedHeight = layoutManager.usedRect(for: container).height
+        NSLayoutConstraint.deactivate(constraints.filter { $0.firstAttribute == .height })
+        let height = usedHeight + textView.textContainerInset.height * 2
+        heightAnchor.constraint(equalToConstant: height).isActive = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 enum MessageRenderer {
     static func renderMessage(_ message: String, isUser: Bool) -> (NSView, NSView) {
         let maxWidth = (NSScreen.main?.visibleFrame.width ?? 800) * 0.65
@@ -41,41 +104,8 @@ enum MessageRenderer {
 
         for segment in segments {
             if segment.isCode {
-                let container = NSView()
-                container.wantsLayer = true
-                container.layer?.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 1.0).cgColor
-                container.layer?.cornerRadius = 6
-                container.translatesAutoresizingMaskIntoConstraints = false
-                
-                let textView = NSTextView()
-                textView.string = segment.content
-                textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-                textView.textColor = .white
-                textView.backgroundColor = .clear
-                textView.isEditable = false
-                textView.isSelectable = true
-                textView.drawsBackground = false
-                textView.textContainerInset = NSSize(width: 6, height: 6)
-                textView.translatesAutoresizingMaskIntoConstraints = false
-                textView.textContainer?.widthTracksTextView = true
-                textView.textContainer?.heightTracksTextView = true
-                textView.textContainer?.lineBreakMode = .byWordWrapping
-
-                container.addSubview(textView)
-
-                NSLayoutConstraint.activate([
-                    textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                    textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                    textView.topAnchor.constraint(equalTo: container.topAnchor),
-                    textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-                    textView.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
-                ])
-
-                textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-                let height = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
-                textView.heightAnchor.constraint(greaterThanOrEqualToConstant: height + 20).isActive = true
-
-                stack.addArrangedSubview(container)
+                let codeView = CodeBlockView(code: segment.content, maxWidth: maxWidth)
+                stack.addArrangedSubview(codeView)
             }
             else {
                 let label = NSTextField(wrappingLabelWithString: segment.content)
@@ -93,13 +123,11 @@ enum MessageRenderer {
                 label.setContentHuggingPriority(.defaultLow, for: .vertical)
                 label.setContentCompressionResistancePriority(.required, for: .vertical)
                 label.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth).isActive = true
-//                label.preferredMaxLayoutWidth = maxWidth - 30
-                
                 stack.addArrangedSubview(label)
             }
         }
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 6),
+            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 5),
             stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 10),
             stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
             stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
