@@ -1,84 +1,67 @@
 // file MessageRenderer.swift
-// This uses static width passed, so if resized smaller, then the window will not resize below 600.
-// Working as of now.
 import Cocoa
 
-class SafeScrollView: NSScrollView {
-    override func scrollWheel(with event: NSEvent) {
-        // Always forward scrolling to parent (chat scroll view)
-        nextResponder?.scrollWheel(with: event)
-    }
-}
+final class CodeBlockView: NSView {
+    private let textView = NSTextView()
 
-func makeCodeBlockView(code: String, maxWidth: CGFloat) -> NSView {
-    // Calculate available width (subtract bubble padding)
-    let availableWidth = maxWidth - 32
-    
-    // Create the container
-    let container = NSView()
-    container.wantsLayer = true
-    container.layer?.backgroundColor = NSColor(white: 0.1, alpha: 1.0).cgColor
-    container.layer?.cornerRadius = 6
-    container.translatesAutoresizingMaskIntoConstraints = false
-    
-    // Create the text view
-    let textView = NSTextView()
-    textView.string = code
-    textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    textView.textColor = .white
-    textView.backgroundColor = .clear
-    textView.isEditable = false
-    textView.isSelectable = true
-    textView.textContainerInset = NSSize(width: 8, height: 8)
-    
-    // Configure text container properly
-    textView.textContainer?.widthTracksTextView = false
-    textView.textContainer?.containerSize = NSSize(width: availableWidth, height: .greatestFiniteMagnitude)
-    
-    // Calculate required height
-    textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-    let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? NSRect(x: 0, y: 0, width: availableWidth, height: 20)
-//    let requiredHeight = min(usedRect.height + 16, 300) // Cap at 300pt
-    let requiredHeight = usedRect.height + 16
+    init(code: String, maxWidth: CGFloat) {
+        print("CODE BLOCK: \(code)")
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
 
-    
-    // Add either scroll view or direct text view
-//    if requiredHeight > 200 {
-//        let scrollView = SafeScrollView()
-//        scrollView.hasVerticalScroller = true
-//        scrollView.hasHorizontalScroller = false
-//        scrollView.autohidesScrollers = true
-//        scrollView.documentView = textView
-//        scrollView.drawsBackground = false
-//        
-//        container.addSubview(scrollView)
-//        scrollView.translatesAutoresizingMaskIntoConstraints = false
-//        
-//        NSLayoutConstraint.activate([
-//            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-//            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-//            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
-//            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-//            
-//            container.widthAnchor.constraint(equalToConstant: availableWidth),
-//            container.heightAnchor.constraint(equalToConstant: requiredHeight)
-//        ])
-//    } else {
-        container.addSubview(textView)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.9).cgColor
+        layer?.cornerRadius = 6
+
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textColor = .white
+        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.textContainerInset = NSSize(width: 8, height: 6)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
         textView.translatesAutoresizingMaskIntoConstraints = false
-        
+        textView.string = code
+
+        addSubview(textView)
+
         NSLayoutConstraint.activate([
-            textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            textView.topAnchor.constraint(equalTo: container.topAnchor),
-            textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            
-            container.widthAnchor.constraint(equalToConstant: availableWidth),
-            container.heightAnchor.constraint(equalToConstant: requiredHeight)
+            textView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 0),
+            textView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 0),
+            textView.topAnchor.constraint(equalTo: topAnchor, constant: 0),
+            textView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
+            widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
         ])
-//    }
+        
+        textView.sizeToFit()
+        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+
+        let textHeight = textView.layoutManager?.usedRect(for: textView.textContainer!).height ?? 20
+        heightAnchor.constraint(equalToConstant: textHeight + 12).isActive = true
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updateHeight),
+            name: NSView.frameDidChangeNotification,
+            object: textView
+        )
+    }
     
-    return container
+    @objc private func updateHeight() {
+        guard let container = textView.textContainer,
+              let layoutManager = textView.layoutManager else { return }
+
+        layoutManager.ensureLayout(for: container)
+        let usedHeight = layoutManager.usedRect(for: container).height
+        NSLayoutConstraint.deactivate(constraints.filter { $0.firstAttribute == .height })
+        let height = usedHeight + textView.textContainerInset.height * 2
+        heightAnchor.constraint(equalToConstant: height).isActive = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 }
 
 enum MessageRenderer {
@@ -88,8 +71,8 @@ enum MessageRenderer {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
         container.layer?.masksToBounds = false
-        container.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        container.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        container.setContentHuggingPriority(.defaultLow, for: .vertical)
+        container.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
         let bubble = NSView()
         bubble.translatesAutoresizingMaskIntoConstraints = false
@@ -121,12 +104,9 @@ enum MessageRenderer {
 
         for segment in segments {
             if segment.isCode {
-                let codeText = segment.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                let codeView = makeCodeBlockView(code: codeText, maxWidth: 600)
-
+                let codeView = CodeBlockView(code: segment.content, maxWidth: maxWidth)
                 stack.addArrangedSubview(codeView)
             }
-
             else {
                 let label = NSTextField(wrappingLabelWithString: segment.content)
                 label.translatesAutoresizingMaskIntoConstraints = false
@@ -143,19 +123,17 @@ enum MessageRenderer {
                 label.setContentHuggingPriority(.defaultLow, for: .vertical)
                 label.setContentCompressionResistancePriority(.required, for: .vertical)
                 label.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth).isActive = true
-//                label.preferredMaxLayoutWidth = maxWidth - 30
-                
                 stack.addArrangedSubview(label)
             }
         }
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
+            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 5),
             stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 10),
             stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
             stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
 
             // bubble.heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
-            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
         ])
 

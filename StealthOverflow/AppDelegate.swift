@@ -3,6 +3,14 @@ import Carbon
 
 var isStealthVisible = true
 
+#if DEBUG
+func injectHotReload() {
+    Bundle(path: "/Applications/InjectionIII.app/Contents/Resources/macOSInjection.bundle")?.load()
+    print("✅ InjectionIII loaded")
+}
+#endif
+
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     var windowManager: WindowManager!
 
@@ -26,6 +34,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        injectHotReload()
+        #endif
+        
+//        NotificationCenter.default.addObserver(forName: Notification.Name("INJECTION_BUNDLE_NOTIFICATION"), object: nil, queue: .main) { _ in
+//            print("💉 Re-rendering after injection")
+//            
+//            if let contentView = NSApp.mainWindow?.contentView {
+//                contentView.subviews.forEach { $0.removeFromSuperview() }
+//
+//                let testMessage = """
+//                Testing injection...
+//
+//                Code block:
+//                ```swift
+//                print("Hello world")
+//                ```
+//                """
+//                let (_, bubble) = MessageRenderer.renderMessage(testMessage, isUser: false)
+//                bubble.frame.origin = CGPoint(x: 40, y: 100)
+//                contentView.addSubview(bubble)
+//            }
+//        }
+
         hotKeyManager = HotKeyManager()
         setupWindow()
         KeyboardHandler.monitorEscapeKey()

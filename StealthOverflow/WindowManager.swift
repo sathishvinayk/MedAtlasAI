@@ -1,3 +1,4 @@
+//file windowmanager.swift
 import Cocoa
 
 class WindowManager {

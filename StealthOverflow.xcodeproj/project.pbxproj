@@ -249,9 +249,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = StealthOverflow/StealthOverflow.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				EMIT_FRONTEND_COMMAND_LINES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = StealthOverflow/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -262,6 +264,10 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				"OTHER_LDFLAGS[arch=*]" = (
+					"-Xlinker",
+					"-interposable",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = exadec.StealthOverflow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -276,9 +282,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = StealthOverflow/StealthOverflow.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				EMIT_FRONTEND_COMMAND_LINES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = StealthOverflow/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
