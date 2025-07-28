@@ -378,28 +378,28 @@ enum MessageRenderer {
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40).isActive = true
         }
         
-        setupWindowResizeHandler(for: stack)
+        _ = setupWindowResizeHandler(for: stack)
         
         return (container, bubble)
     }
     
     // MARK: - Private Helpers
-    
     private static func calculateMaxWidth() -> CGFloat {
         let screenWidth = NSScreen.main?.visibleFrame.width ?? 800
         return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
     }
     
-    private static func setupWindowResizeHandler(for stack: NSStackView) {
+    private static func setupWindowResizeHandler(for stack: NSStackView) -> Any? {
         if let observer = windowResizeObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         
-        windowResizeObserver = NotificationCenter.default.addObserver(
+        let observer = NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: nil,
             queue: .main
-        ) { _ in
+        ) { [weak stack]_ in
+            guard let stack = stack else { return }
             MessageRenderer.debounceTimer?.invalidate()
             MessageRenderer.debounceTimer = Timer.scheduledTimer(
                 withTimeInterval: 0.05,
@@ -415,6 +415,17 @@ enum MessageRenderer {
                 }
             }
         }
+        windowResizeObserver = observer
+        return observer
+    }
+    
+    static func cleanupObservers() {
+        if let observer = windowResizeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            windowResizeObserver = nil
+        }
+        debounceTimer?.invalidate()
+        debounceTimer = nil
     }
     
     // MARK: - Markdown Parsing
@@ -486,4 +497,14 @@ enum MessageRenderer {
         
         return attributed
     }
+}
+
+private extension MessageRenderer {
+    private static var cleanupToken: Int = {
+        // Register cleanup when process exits
+        atexit {
+            MessageRenderer.cleanupObservers()
+        }
+        return 0
+    }()
 }
