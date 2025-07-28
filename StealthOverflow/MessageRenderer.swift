@@ -5,45 +5,68 @@ private class DisplayLink {
     private var displayLink: Any?
     private let callback: () -> Void
     private var isReady = false
+    private var retryCount = 0
+    private let maxRetryCount = 5
+    private let retryInterval: TimeInterval = 0.1
     
     init(callback: @escaping () -> Void) {
         self.callback = callback
         setupDisplayLink()
     }
     
+    private func setupCVDisplayLink() {
+        var link: CVDisplayLink?
+        let status = CVDisplayLinkCreateWithActiveCGDisplays(&link)
+        guard status == kCVReturnSuccess, let link = link else {
+            print("DisplayLink: Failed to create CVDisplayLink")
+            return
+        }
+        
+        let callbackStatus = CVDisplayLinkSetOutputCallback(link, { (_, _, _, _, _, context) -> CVReturn in
+            let wrapper = unsafeBitCast(context, to: DisplayLink.self)
+            wrapper.callback()
+            return kCVReturnSuccess
+        }, Unmanaged.passUnretained(self).toOpaque())
+        
+        guard callbackStatus == kCVReturnSuccess else {
+            print("DisplayLink: Failed to set callback")
+            return
+        }
+        
+        let startStatus = CVDisplayLinkStart(link)
+        guard startStatus == kCVReturnSuccess else {
+            print("DisplayLink: Failed to start")
+            return
+        }
+        
+        displayLink = link
+        isReady = true
+    }
+    
+    private func scheduleRetry() {
+        guard retryCount < maxRetryCount else {
+            print("DisplayLink: Max retry attempts reached, falling back to CVDisplayLink")
+            setupCVDisplayLink()
+                        return
+        }
+        retryCount += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + retryInterval) { [weak self] in
+            self?.setupDisplayLink()
+        }
+    }
+    
     private func setupDisplayLink() {
         if #available(macOS 15.0, *) {
-            displayLink = NSApplication.shared.mainWindow?.displayLink(
-                target: self,
-                selector: #selector(displayLinkCallback))
-            isReady = true
+            if let window = NSApplication.shared.mainWindow {
+                displayLink = NSApplication.shared.mainWindow?.displayLink(
+                    target: self,
+                    selector: #selector(displayLinkCallback))
+                isReady = true
+            } else {
+                scheduleRetry()
+            }
         } else {
-            var link: CVDisplayLink?
-            let status = CVDisplayLinkCreateWithActiveCGDisplays(&link)
-            guard status == kCVReturnSuccess, let link = link else {
-                print("DisplayLink: Failed to create CVDisplayLink")
-                return
-            }
-            
-            let callbackStatus = CVDisplayLinkSetOutputCallback(link, { (_, _, _, _, _, context) -> CVReturn in
-                let wrapper = unsafeBitCast(context, to: DisplayLink.self)
-                wrapper.callback()
-                return kCVReturnSuccess
-            }, Unmanaged.passUnretained(self).toOpaque())
-            
-            guard callbackStatus == kCVReturnSuccess else {
-                print("DisplayLink: Failed to set callback")
-                return
-            }
-            
-            let startStatus = CVDisplayLinkStart(link)
-            guard startStatus == kCVReturnSuccess else {
-                print("DisplayLink: Failed to start")
-                return
-            }
-            
-            displayLink = link
-            isReady = true
+            setupCVDisplayLink()
         }
     }
     
