@@ -116,7 +116,7 @@ private class DisplayLink {
 final class StreamingTextController {
     private weak var textView: NSTextView?
     private var displayLink: DisplayLink?
-    private var pendingUpdates: [String] = []
+    private var pendingUpdates: [NSAttributedString] = []
     private let updateQueue = DispatchQueue(label: "streaming.text.queue", qos: .userInteractive)
     private let updateLock = NSLock()
     private var lastRenderTime: CFTimeInterval = 0
@@ -148,7 +148,7 @@ final class StreamingTextController {
         textView?.drawsBackground = false
     }
     
-    func appendStreamingText(_ newText: String) {
+    func appendStreamingText(_ newText: NSAttributedString) {
         updateQueue.async { [weak self] in
             guard let self = self else { return }
             self.updateLock.lock()
@@ -164,11 +164,17 @@ final class StreamingTextController {
         }
     }
     
+    // Keep old method for backward compatibility
+    func appendStreamingText(_ newText: String) {
+        let attributedString = NSAttributedString(string: newText)
+        appendStreamingText(attributedString)
+    }
+    
     private func processPendingUpdates() {
         let currentTime = CACurrentMediaTime()
         guard currentTime - lastRenderTime >= minFrameInterval else { return }
         
-        var updates: [String] = []
+        var updates: [NSAttributedString] = []
         updateLock.lock()
         if !pendingUpdates.isEmpty {
             updates = pendingUpdates
@@ -188,13 +194,14 @@ final class StreamingTextController {
                 self?.updateLock.unlock()
                 return
             }
-            
-            let combinedUpdate = updates.joined()
+
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.1
                 context.allowsImplicitAnimation = true
                 
-                textView.textStorage?.append(NSAttributedString(string: combinedUpdate))
+                let combinedUpdate = NSMutableAttributedString()
+                updates.forEach { combinedUpdate.append($0) }
+                textView.textStorage?.append(combinedUpdate)
                 
                 if let scrollView = textView.enclosingScrollView {
                     let visibleRect = scrollView.documentVisibleRect
@@ -225,7 +232,7 @@ class TextBlockView: NSView {
     let textView = NSTextView()
     private(set) var isStreaming = false
     private var heightConstraint: NSLayoutConstraint?
-    private var streamingController: StreamingTextController?
+    internal var streamingController: StreamingTextController?
     private let maxWidth: CGFloat
     
     init(attributedText: NSAttributedString? = nil, maxWidth: CGFloat) {
@@ -278,7 +285,7 @@ class TextBlockView: NSView {
         }
     }
     
-    func appendStreamingText(_ text: String) {
+    @objc func appendStreamingText(_ text: NSAttributedString) {
         if !isStreaming {
             beginStreaming()
         }
@@ -319,15 +326,16 @@ class TextBlockView: NSView {
 
 // MARK: - Code Block View
 final class CodeBlockView: TextBlockView {
+    private let codeAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+        .foregroundColor: NSColor.white
+    ]
     init(code: String, maxWidth: CGFloat) {
-        super.init(maxWidth: maxWidth)
+        super.init(attributedText: nil, maxWidth: maxWidth)
         configureCodeAppearance()
         setCompleteText(NSAttributedString(
             string: code,
-            attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
-                .foregroundColor: NSColor.white
-            ]
+            attributes: codeAttributes
         ))
     }
     
@@ -343,20 +351,27 @@ final class CodeBlockView: TextBlockView {
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.9).cgColor
     }
     
-    override func appendStreamingText(_ text: String) {
-        let attributedString = NSAttributedString(string: text, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
-            .foregroundColor: NSColor.white
-        ])
-        
+    // New method for attributed strings
+    override func appendStreamingText(_ text: NSAttributedString) {
+        // Ensure all text gets styled with codeAttributes, even if already attributed
+        let styledText = NSMutableAttributedString(attributedString: text)
+        styledText.addAttributes(codeAttributes, range: NSRange(location: 0, length: styledText.length))
+
         if isStreaming {
-            textView.textStorage?.append(attributedString)
+            streamingController?.appendStreamingText(styledText)
         } else {
             beginStreaming()
-            textView.textStorage?.append(attributedString)
+            streamingController?.appendStreamingText(styledText)
         }
         updateHeight()
     }
+
+    
+    func appendStreamingText(_ text: String) {
+        let attributedString = NSAttributedString(string: text, attributes: codeAttributes)
+        appendStreamingText(attributedString)
+    }
+    
 }
 // MARK: - Message Renderer
 enum MessageRenderer {
