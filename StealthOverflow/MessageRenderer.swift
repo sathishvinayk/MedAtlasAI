@@ -111,10 +111,12 @@ private class DisplayLink {
     }
 }
 
-
 // MARK: - Streaming Text Controller
 final class StreamingTextController {
-    private weak var textView: NSTextView?
+    let view = NSView()
+    private let textView = NSTextView()
+    private let scrollView = NSScrollView()
+    private let maxWidth: CGFloat
     private var displayLink: DisplayLink?
     private var pendingUpdates: [NSAttributedString] = []
     private let updateQueue = DispatchQueue(label: "streaming.text.queue", qos: .userInteractive)
@@ -122,12 +124,46 @@ final class StreamingTextController {
     private var lastRenderTime: CFTimeInterval = 0
     private let minFrameInterval: CFTimeInterval = 1/60 // 60 FPS
     private var isReady = false
-    
-    init(textView: NSTextView) {
-        self.textView = textView
-        configureTextView()
+
+    init(text: String, maxWidth: CGFloat) {
+        self.maxWidth = maxWidth
+
+        textView.string = text
+        textView.isEditable = false
+        textView.drawsBackground = false
+        textView.isSelectable = true
+        textView.textContainerInset = NSSize(width: 8, height: 6)
+        textView.textContainer?.widthTracksTextView = true
+        textView.font = .systemFont(ofSize: 14)
+
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor(white: 0.95, alpha: 1.0).cgColor
+        view.layer?.cornerRadius = 10
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            view.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
+        ])
         setupDisplayLink()
     }
+    
+    // init(textView: NSTextView) {
+    //     self.textView = textView
+    //     configureTextView()
+    //     setupDisplayLink()
+    // }
     
     private func setupDisplayLink() {
         displayLink = DisplayLink { [weak self] in
@@ -140,35 +176,34 @@ final class StreamingTextController {
     }
     
     private func configureTextView() {
-        textView?.layoutManager?.showsInvisibleCharacters = false
-        textView?.layoutManager?.showsControlCharacters = false
-        textView?.layoutManager?.backgroundLayoutEnabled = true
-        textView?.layer?.drawsAsynchronously = true
-        textView?.isEditable = false
-        textView?.drawsBackground = false
+        textView.layoutManager?.showsInvisibleCharacters = false
+        textView.layoutManager?.showsControlCharacters = false
+        textView.layoutManager?.backgroundLayoutEnabled = true
+        textView.layer?.drawsAsynchronously = true
+        textView.isEditable = false
+        textView.drawsBackground = false
     }
     
-    func appendStreamingText(_ newText: NSAttributedString) {
-        updateQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.updateLock.lock()
-            self.pendingUpdates.append(newText)
-            self.updateLock.unlock()
-            
-            // If this is the first update, trigger immediate processing
-            if !self.isReady {
-                DispatchQueue.main.async {
-                    self.processPendingUpdates()
-                }
-            }
-        }
-    }
+    // func appendStreamingText(_ text: String) {
+    //     // textView.string += newText
+    //     self.textView.needsLayout = true
+    //     self.view.needsLayout = true
+    //     self.view.layoutSubtreeIfNeeded()
+
+    //     // Ensure parent NSStackView relayouts too
+    //     if let stack = self.view.superview as? NSStackView {
+    //         stack.needsLayout = true
+    //         stack.layoutSubtreeIfNeeded()
+    //     }
+    // }
     
-    // Keep old method for backward compatibility
-    func appendStreamingText(_ newText: String) {
-        let attributedString = NSAttributedString(string: newText)
-        appendStreamingText(attributedString)
-    }
+   func appendStreamingText(_ newText: String) {
+       let attributedString = NSAttributedString(string: newText, attributes: [.font: NSFont.systemFont(ofSize: 14)])
+       
+       updateLock.lock()
+       pendingUpdates.append(attributedString)
+       updateLock.unlock()
+   }
     
     private func processPendingUpdates() {
         let currentTime = CACurrentMediaTime()
@@ -185,9 +220,7 @@ final class StreamingTextController {
         guard !updates.isEmpty else { return }
         
         DispatchQueue.main.async { [weak self] in
-            guard let self = self,
-                  let textView = self.textView,
-                  textView.window != nil else {
+            guard let self = self, self.textView.window != nil else {
                 // Requeue updates if view isn't ready
                 self?.updateLock.lock()
                 self?.pendingUpdates.insert(contentsOf: updates, at: 0)
@@ -201,9 +234,9 @@ final class StreamingTextController {
                 
                 let combinedUpdate = NSMutableAttributedString()
                 updates.forEach { combinedUpdate.append($0) }
-                textView.textStorage?.append(combinedUpdate)
+                self.textView.textStorage?.append(combinedUpdate)
                 
-                if let scrollView = textView.enclosingScrollView {
+                if let scrollView = self.textView.enclosingScrollView {
                     let visibleRect = scrollView.documentVisibleRect
                     let maxY = scrollView.documentView?.bounds.maxY ?? 0
                     if maxY - visibleRect.maxY < 50 {
@@ -276,7 +309,7 @@ class TextBlockView: NSView {
         isStreaming = true
         
         if window != nil {
-            streamingController = StreamingTextController(textView: textView)
+            streamingController = StreamingTextController(text: textView.string, maxWidth: 400)
         } else {
             // Wait for window to be available
             DispatchQueue.main.async { [weak self] in
@@ -289,7 +322,7 @@ class TextBlockView: NSView {
         if !isStreaming {
             beginStreaming()
         }
-        streamingController?.appendStreamingText(text)
+        streamingController?.appendStreamingText(text.string)
         updateHeight()
     }
     
@@ -358,10 +391,10 @@ final class CodeBlockView: TextBlockView {
         styledText.addAttributes(codeAttributes, range: NSRange(location: 0, length: styledText.length))
 
         if isStreaming {
-            streamingController?.appendStreamingText(styledText)
+            streamingController?.appendStreamingText(styledText.string)
         } else {
             beginStreaming()
-            streamingController?.appendStreamingText(styledText)
+            streamingController?.appendStreamingText(styledText.string)
         }
         updateHeight()
     }
@@ -373,6 +406,7 @@ final class CodeBlockView: TextBlockView {
     }
     
 }
+
 // MARK: - Message Renderer
 enum MessageRenderer {
     private static var windowResizeObserver: Any?
@@ -441,6 +475,11 @@ enum MessageRenderer {
         _ = setupWindowResizeHandler(for: stack)
         
         return (container, bubble)
+    }
+    
+    static func renderStreamingMessage() -> (NSView, StreamingTextController) {
+        let controller = StreamingTextController(text: "", maxWidth: calculateMaxWidth())
+        return (controller.view, controller)
     }
     
     // MARK: - Private Helpers
