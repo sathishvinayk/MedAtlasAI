@@ -7,27 +7,68 @@ enum StreamRenderer {
         let textBlock: TextBlock
         private var attributedCharacterQueue: [NSAttributedString] = []
         private var fullAttributedString = NSMutableAttributedString()
+
         private let updateLock = NSLock()
         private var displayLink: DisplayLink?
         private var isAnimating = false
         private var framesSinceLastUpdate = 0
         private let framesPerCharacter = 2 // Adjust for speed (lower = faster)
+        private var currentAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14),
+            .foregroundColor: NSColor.textColor
+        ]
+        private var pendingChunks: [NSAttributedString] = []
+        private let minFrameInterval: CFTimeInterval = 1/60 // 60fps cap
+        private var lastRenderTime: CFTimeInterval = 0
+
+        private var unprocessedText: String = ""
+        private let wordSeparators = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
+        private var lastChunkSize = 0
 
         init(textBlock: TextBlock) {
             self.textBlock = textBlock
         }
 
         func appendStreamingText(_ newChunk: String, 
-            attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.textColor] ) {
-            let newCharacters = newChunk.map { char in
-                NSAttributedString(string: String(char), attributes: attributes)
-            }
-            
+            attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 14),
+                .foregroundColor: NSColor.textColor]) 
+        {
+            let attributed = NSAttributedString(string: newChunk, attributes: attributes)
+
             updateLock.lock()
-            attributedCharacterQueue.append(contentsOf: newCharacters)
+            pendingChunks.append(attributed)
             updateLock.unlock()
             
             startIfNeeded()
+        }
+
+        private func processPendingUpdates() {
+            let currentTime = CACurrentMediaTime()
+            guard currentTime - lastRenderTime >= minFrameInterval else { return }
+
+            updateLock.lock()
+            guard !pendingChunks.isEmpty else {
+                updateLock.unlock()
+                stop()
+                return
+            }
+
+            // Pop the next chunk
+            let nextChunk = pendingChunks.removeFirst()
+            updateLock.unlock()
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.1
+                    context.allowsImplicitAnimation = true
+                    self.textBlock.appendText(nextChunk)
+                })
+                
+                self.lastRenderTime = currentTime
+            }
         }
 
         private func startIfNeeded() {
@@ -42,27 +83,7 @@ enum StreamRenderer {
         }
 
         private func frameUpdate(){
-            framesSinceLastUpdate += 1
-            guard framesSinceLastUpdate >= framesPerCharacter else { return }
-            framesSinceLastUpdate = 0
-            
-            appendNextCharacter()
-        }
-
-        private func appendNextCharacter() {
-            updateLock.lock()
-            guard !attributedCharacterQueue.isEmpty else {
-                updateLock.unlock()
-                stop()
-                return
-            }
-
-            let nextChar = attributedCharacterQueue.removeFirst()
-            updateLock.unlock()
-
-            DispatchQueue.main.async {
-                self.textBlock.appendText(nextChar)
-            }
+            processPendingUpdates()
         }
 
         private func stop() {
@@ -118,6 +139,7 @@ enum StreamRenderer {
         }
 
         func appendText(_ attributedString: NSAttributedString) {
+            print("Appending text: \(attributedString.string)") // Debug print
             if textView.textStorage == nil {
                 textView.layoutManager?.replaceTextStorage(NSTextStorage())
             }
@@ -126,7 +148,7 @@ enum StreamRenderer {
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.1
                 context.allowsImplicitAnimation = true
-                textView.scrollToEndOfDocument(nil)
+                // textView.scrollToEndOfDocument(nil) 
             })
 
             updateHeight()
