@@ -122,8 +122,8 @@ public class DisplayLink {
         if #available(macOS 15.0, *) {
             (displayLink as AnyObject).invalidate()
         } else {
-            if let link = displayLink, CFGetTypeID(link) == CVDisplayLinkGetTypeID() {
-                CVDisplayLinkStop(unsafeBitCast(link, to: CVDisplayLink.self))
+            if CFGetTypeID(displayLink) == CVDisplayLinkGetTypeID() {
+                CVDisplayLinkStop(unsafeBitCast(displayLink, to: CVDisplayLink.self))
             }
         }
     }
