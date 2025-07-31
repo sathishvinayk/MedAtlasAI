@@ -8,9 +8,7 @@ enum StreamRenderer {
         private var attributedCharacterQueue: [NSAttributedString] = []
         private var fullAttributedString = NSMutableAttributedString()
         private let updateLock = NSLock()
-        private var displayLink: CVDisplayLink? = nil
-        private var nsDisplayLink: Any? = nil
-        
+        private var displayLink: DisplayLink?
         private var isAnimating = false
 
         init(textBlock: TextBlock) {
@@ -27,46 +25,50 @@ enum StreamRenderer {
             attributedCharacterQueue.append(contentsOf: newCharacters)
             updateLock.unlock()
             
-            startStreaming()
+            startIfNeeded()
         }
 
-        private func stop() {
-            isAnimating = false   
-        }
-
-        private func startStreaming() {
+        private func startIfNeeded() {
             guard !isAnimating else { return }
             isAnimating = true
 
+            displayLink = DisplayLink { [weak self] in
+                self?.appendNextCharacter()
+            }
+            displayLink?.start()
+        }
+
+        private func stop() {
+            isAnimating = false
+            displayLink?.stop()
+            displayLink = nil
+        }
+
+        private func appendNextCharacter() {
             updateLock.lock()
-            let charsToAppend = attributedCharacterQueue
-            attributedCharacterQueue.removeAll()
+            guard !attributedCharacterQueue.isEmpty else {
+                updateLock.unlock()
+                stop()
+                return
+            }
+
+            let nextChar = attributedCharacterQueue.removeFirst()
             updateLock.unlock()
 
-            fullAttributedString.append(NSAttributedString(attributedString: NSAttributedString(attributedString: NSAttributedString(string: "")))) // placeholder if needed
-
             DispatchQueue.main.async {
-                let textView = self.textBlock.textView
-                textView.textStorage?.append(NSAttributedString(attributedString: NSAttributedString(attributedString: NSAttributedString(string: "")))) // placeholder
-
-                charsToAppend.forEach { char in
-                    self.fullAttributedString.append(char)
-                }
-
-                textView.textStorage?.setAttributedString(self.fullAttributedString)
-                self.textBlock.updateHeight()
-                textView.scrollToEndOfDocument(nil)
+                self.textBlock.appendText(nextChar)
             }
         }
     }
 
     class TextBlock: NSView {
-        let textView = NSTextView()
+        let textView: NSTextView
         private var heightConstraint: NSLayoutConstraint?
         private let maxWidth: CGFloat
     
         init(maxWidth: CGFloat) {
             self.maxWidth = maxWidth
+            self.textView = NSTextView()
             super.init(frame: .zero)
             setupTextView()
         }
@@ -76,6 +78,13 @@ enum StreamRenderer {
         }
 
         private func setupTextView() {
+            let textStorage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
+            textStorage.addLayoutManager(layoutManager)
+            let textContainer = NSTextContainer(containerSize: NSSize(width: maxWidth, height: .greatestFiniteMagnitude))
+            layoutManager.addTextContainer(textContainer)
+            textView.layoutManager?.replaceTextStorage(textStorage)
+
             textView.translatesAutoresizingMaskIntoConstraints = false
             textView.isEditable = false
             textView.isSelectable = true
@@ -83,7 +92,6 @@ enum StreamRenderer {
             textView.textContainerInset = NSSize(width: 8, height: 8)
             textView.textContainer?.lineFragmentPadding = 0
             textView.textContainer?.widthTracksTextView = true
-            textView.textContainer?.containerSize = NSSize(width: maxWidth, height: .greatestFiniteMagnitude)
             textView.isHorizontallyResizable = false
             
             addSubview(textView)
@@ -97,7 +105,17 @@ enum StreamRenderer {
             ])
         }
 
-         func updateHeight() {
+        func appendText(_ attributedString: NSAttributedString) {
+            if textView.textStorage == nil {
+                textView.layoutManager?.replaceTextStorage(NSTextStorage())
+            }
+            
+            textView.textStorage?.append(attributedString)
+            textView.scrollToEndOfDocument(nil)
+            updateHeight()
+        }
+
+        func updateHeight() {
             guard let container = textView.textContainer,
                 let layoutManager = textView.layoutManager else { return }
             
@@ -111,6 +129,8 @@ enum StreamRenderer {
                 heightConstraint = heightAnchor.constraint(equalToConstant: totalHeight)
                 heightConstraint?.isActive = true
             }
+
+            superview?.layoutSubtreeIfNeeded()
         }
     }
 
