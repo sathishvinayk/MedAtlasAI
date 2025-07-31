@@ -10,6 +10,8 @@ enum StreamRenderer {
         private let updateLock = NSLock()
         private var displayLink: DisplayLink?
         private var isAnimating = false
+        private var framesSinceLastUpdate = 0
+        private let framesPerCharacter = 2 // Adjust for speed (lower = faster)
 
         init(textBlock: TextBlock) {
             self.textBlock = textBlock
@@ -31,17 +33,20 @@ enum StreamRenderer {
         private func startIfNeeded() {
             guard !isAnimating else { return }
             isAnimating = true
+            framesSinceLastUpdate = 0
 
             displayLink = DisplayLink { [weak self] in
-                self?.appendNextCharacter()
+                self?.frameUpdate()
             }
             displayLink?.start()
         }
 
-        private func stop() {
-            isAnimating = false
-            displayLink?.stop()
-            displayLink = nil
+        private func frameUpdate(){
+            framesSinceLastUpdate += 1
+            guard framesSinceLastUpdate >= framesPerCharacter else { return }
+            framesSinceLastUpdate = 0
+            
+            appendNextCharacter()
         }
 
         private func appendNextCharacter() {
@@ -58,6 +63,12 @@ enum StreamRenderer {
             DispatchQueue.main.async {
                 self.textBlock.appendText(nextChar)
             }
+        }
+
+        private func stop() {
+            isAnimating = false
+            displayLink?.stop()
+            displayLink = nil
         }
     }
 
@@ -81,6 +92,7 @@ enum StreamRenderer {
             let textStorage = NSTextStorage()
             let layoutManager = NSLayoutManager()
             textStorage.addLayoutManager(layoutManager)
+            
             let textContainer = NSTextContainer(containerSize: NSSize(width: maxWidth, height: .greatestFiniteMagnitude))
             layoutManager.addTextContainer(textContainer)
             textView.layoutManager?.replaceTextStorage(textStorage)
@@ -111,7 +123,12 @@ enum StreamRenderer {
             }
             
             textView.textStorage?.append(attributedString)
-            textView.scrollToEndOfDocument(nil)
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.1
+                context.allowsImplicitAnimation = true
+                textView.scrollToEndOfDocument(nil)
+            })
+
             updateHeight()
         }
 
