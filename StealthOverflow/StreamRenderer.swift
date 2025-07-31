@@ -17,7 +17,10 @@ enum StreamRenderer {
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: NSColor.textColor
         ]
-        private var pendingChunks: [NSAttributedString] = []
+
+        private let tokenizer = TextStreamTokenizer()
+        private var pendingTokens: [(token: TextStreamTokenizer.TokenType, attributedString: NSAttributedString)] = []
+
         private let minFrameInterval: CFTimeInterval = 1/60 // 60fps cap
         private var lastRenderTime: CFTimeInterval = 0
 
@@ -37,18 +40,14 @@ enum StreamRenderer {
             updateLock.lock()
             defer { updateLock.unlock() }
 
-            let pattern = #"(\s+|[^\s]+)"#  // Match words + spaces separately
-
-            let regex = try! NSRegularExpression(pattern: pattern, options: [])
-            let range = NSRange(newChunk.startIndex..., in: newChunk)
-            let matches = regex.matches(in: newChunk, options: [], range: range)
-            // let attributed = NSAttributedString(string: newChunk, attributes: attributes)
-            
-            for match in matches {
-                if let wordRange = Range(match.range, in: newChunk) {
-                    let token = String(newChunk[wordRange])
-                    let attributed = NSAttributedString(string: token, attributes: attributes)
-                    pendingChunks.append(attributed)
+            let tokens = tokenizer.tokenize(newChunk)
+            pendingTokens += tokens.map { token in
+                switch token {
+                    case .word(let text), .punctuation(let text), 
+                        .whitespace(let text), .special(let text):
+                        return (token, NSAttributedString(string: text, attributes: attributes))
+                    case .newline:
+                        return (token, NSAttributedString(string: "\n", attributes: attributes))
                 }
             }
             
@@ -60,23 +59,29 @@ enum StreamRenderer {
             guard currentTime - lastRenderTime >= minFrameInterval else { return }
 
             updateLock.lock()
-            guard !pendingChunks.isEmpty else {
-                updateLock.unlock()
+            defer {updateLock.unlock()}
+
+            guard !pendingTokens.isEmpty else {
                 stop()
                 return
             }
 
             // Pop the next chunk
-            let nextChunk = pendingChunks.removeFirst()
-            updateLock.unlock()
+            let (token, attributedString) = pendingTokens.removeFirst()
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
+
+                if case .newline = token {
+                    self.textBlock.appendNewline()
+                } else {
+                    self.textBlock.appendText(attributedString)
+                }
                 
                 NSAnimationContext.runAnimationGroup({ context in
                     context.duration = 0.1
                     context.allowsImplicitAnimation = true
-                    self.textBlock.appendText(nextChunk)
+                    // self.textBlock.appendText(nextChunk)
                 })
                 
                 self.lastRenderTime = currentTime
@@ -86,16 +91,14 @@ enum StreamRenderer {
         private func startIfNeeded() {
             guard !isAnimating else { return }
             isAnimating = true
-            framesSinceLastUpdate = 0
+
+            // framesSinceLastUpdate = 0
 
             displayLink = DisplayLink { [weak self] in
-                self?.frameUpdate()
+                self?.processPendingUpdates()
             }
+            
             displayLink?.start()
-        }
-
-        private func frameUpdate(){
-            processPendingUpdates()
         }
 
         private func stop() {
@@ -164,6 +167,10 @@ enum StreamRenderer {
             })
 
             updateHeight()
+        }
+
+        func appendNewline() {
+            appendText(NSAttributedString(string: "\n"))
         }
 
         func updateHeight() {
