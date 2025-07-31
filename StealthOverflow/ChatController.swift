@@ -46,48 +46,48 @@ class ChatController {
             DispatchQueue.main.async {
                 guard let self = self else { return }
 
-                 if chunk == "[STREAM_DONE]" {
-                     self.typingIndicator?.removeFromSuperview()
-                     self.typingIndicator?.stopAnimating()
-                     self.typingIndicator = nil
+                if chunk == "[STREAM_DONE]" {
+                    self.typingIndicator?.removeFromSuperview()
+                    self.typingIndicator?.stopAnimating()
+                    self.typingIndicator = nil
 
-                     if self.isInCodeBlock && !self.codeBlockBuffer.isEmpty {
-                         self.assistantResponseBuffer.append(NSAttributedString(string: "```\n" + self.codeBlockBuffer + "\n```"))
-                         self.codeBlockBuffer = ""
-                         self.isInCodeBlock = false
-                     }
+                //  if self.isInCodeBlock && !self.codeBlockBuffer.isEmpty {
+                //      self.assistantResponseBuffer.append(NSAttributedString(string: "```\n" + self.codeBlockBuffer + "\n```"))
+                //      self.codeBlockBuffer = ""
+                //      self.isInCodeBlock = false
+                //  }
 
-                     let finalText = self.assistantResponseBuffer.string.trimmingCharacters(in: .whitespacesAndNewlines)
-                     if !finalText.isEmpty {
-                         let (finalBubble, _) = MessageRenderer.renderMessage(finalText, isUser: false)
-                         self.messagesStack?.addArrangedSubview(finalBubble)
-                     }
+                //  let finalText = self.assistantResponseBuffer.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                //  if !finalText.isEmpty {
+                //      let (finalBubble, _) = MessageRenderer.renderMessage(finalText, isUser: false)
+                //      self.messagesStack?.addArrangedSubview(finalBubble)
+                //  }
 
-                     self.currentStreamingTextController?.view.removeFromSuperview()
-                     self.currentStreamingTextController = nil
-                     return
-                 }
+                //  self.currentStreamingTextController?.view.removeFromSuperview()
+                //  self.currentStreamingTextController = nil
+                    return
+                }
 
-                 // Step 2: Ignore empty chunks
-                 let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
-                 guard !trimmedChunk.isEmpty else { return }
+                // Step 2: Ignore empty chunks
+                let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedChunk.isEmpty else { return }
 
-                 // Step 3: Process chunk
-                 let processedChunk = self.processStreamChunk(chunk)
+                // Step 3: Process chunk
+                let processedChunk = self.processStreamChunk(chunk)
 
-                 // Step 4: Lazy create streaming bubble
-                 if self.currentStreamingTextController == nil {
-                     self.typingIndicator?.removeFromSuperview()
-                     self.typingIndicator?.stopAnimating()
-                     self.typingIndicator = nil
+                // Step 4: Lazy create streaming bubble
+                if self.currentStreamingTextController == nil {
+                    self.typingIndicator?.removeFromSuperview()
+                    self.typingIndicator?.stopAnimating()
+                    self.typingIndicator = nil
 
-                     let (bubble, controller) = MessageRenderer.renderStreamingMessage()
-                     self.messagesStack?.addArrangedSubview(bubble)
-                     self.currentStreamingTextController = controller
-                 }
+                    let (bubble, controller) = StreamRenderer.renderStreamingMessage()
+                    self.messagesStack?.addArrangedSubview(bubble)
+                    self.currentStreamingTextController = controller
+                }
 
-                 // Step 5: Append text to the live bubble
-                 self.currentStreamingTextController?.appendStreamingText(processedChunk)
+                // Step 5: Append text to the live bubble
+                self.currentStreamingTextController?.appendStreamingText(processedChunk)
             }
         }
     }

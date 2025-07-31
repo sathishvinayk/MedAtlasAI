@@ -159,12 +159,6 @@ final class StreamingTextController {
         setupDisplayLink()
     }
     
-    // init(textView: NSTextView) {
-    //     self.textView = textView
-    //     configureTextView()
-    //     setupDisplayLink()
-    // }
-    
     private func setupDisplayLink() {
         displayLink = DisplayLink { [weak self] in
             self?.processPendingUpdates()

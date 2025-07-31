@@ -1,0 +1,124 @@
+// MARK: - STREAMRENDERER.swift
+enum StreamRenderer {
+    final class StreamMessageController() {
+        private let maxWidth: CGFloat
+        init(text: String, maxWidth: CGFloat) {}
+        func appendStreamingText(_ newChunk: String, attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14)] ) {
+            let newCharacters = newChunk.map { char in
+                return NSAttributedString(string: String(char), attributes: attributes)
+            }
+            updateLock.lock()
+            attributedCharacterQueue.append(contentsOf: newCharacters)
+            updateLock.unlock() 
+            startIfNeeded()
+        }
+    }
+
+    class TextBlock: NSView {
+        let textView = NSTextView()
+        private var heightConstraint: NSLayoutConstraint?
+        private let maxWidth: CGFloat
+    
+        init(maxWidth: CGFloat) {
+            self.maxWidth = maxWidth
+            super.init(frame: .zero)
+            setupTextView()
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        private func setupTextView() {
+            textView.translatesAutoresizingMaskIntoConstraints = false
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.drawsBackground = false
+            textView.textContainerInset = NSSize(width: 8, height: 8)
+            textView.textContainer?.lineFragmentPadding = 0
+            textView.textContainer?.widthTracksTextView = true
+            textView.textContainer?.containerSize = NSSize(width: maxWidth, height: .greatestFiniteMagnitude)
+            textView.isHorizontallyResizable = false
+            
+            addSubview(textView)
+            
+            NSLayoutConstraint.activate([
+                textView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                textView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                textView.topAnchor.constraint(equalTo: topAnchor),
+                textView.bottomAnchor.constraint(equalTo: bottomAnchor),
+                widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
+            ])
+        }
+
+         func updateHeight() {
+            guard let container = textView.textContainer,
+                let layoutManager = textView.layoutManager else { return }
+            
+            layoutManager.ensureLayout(for: container)
+            let usedRect = layoutManager.usedRect(for: container)
+            let totalHeight = ceil(usedRect.height) + textView.textContainerInset.height * 2
+            
+            if let heightConstraint = heightConstraint {
+                heightConstraint.constant = totalHeight
+            } else {
+                heightConstraint = heightAnchor.constraint(equalToConstant: totalHeight)
+                heightConstraint?.isActive = true
+            }
+        }
+    }
+
+    static func renderStreamingMessage() -> (NSView, StreamMessageController) {
+        let maxWidth = calculateMaxWidth()
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let bubble = NSView()
+        bubble.translatesAutoresizingMaskIntoConstraints = false
+        bubble.wantsLayer = true
+        bubble.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+        bubble.layer?.cornerRadius = 10
+        
+        container.addSubview(bubble)
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.distribution = .fill
+        stack.alignment = .leading
+
+        bubble.addSubview(stack)
+
+        // Text block here
+        let textblock = TextBlock(maxWidth: maxWidth)
+        stack.addArrangedSubview(textView)
+
+        let controller = StreamMessageController(text: "", maxWidth: maxWidth)
+
+        // Setup constraints
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
+            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
+            
+            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+            bubble.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
+        ])
+
+        bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8).isActive = true
+        bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40).isActive = true
+
+        return (container, controller)
+    }
+
+    // MARK: - Private Helpers
+    private static func calculateMaxWidth() -> CGFloat {
+        let screenWidth = NSScreen.main?.visibleFrame.width ?? 800
+        return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
+    }
+}
+
