@@ -34,11 +34,23 @@ enum StreamRenderer {
                 .font: NSFont.systemFont(ofSize: 14),
                 .foregroundColor: NSColor.textColor]) 
         {
-            let attributed = NSAttributedString(string: newChunk, attributes: attributes)
-
             updateLock.lock()
-            pendingChunks.append(attributed)
-            updateLock.unlock()
+            defer { updateLock.unlock() }
+
+            let pattern = #"(\s+|[^\s]+)"#  // Match words + spaces separately
+
+            let regex = try! NSRegularExpression(pattern: pattern, options: [])
+            let range = NSRange(newChunk.startIndex..., in: newChunk)
+            let matches = regex.matches(in: newChunk, options: [], range: range)
+            // let attributed = NSAttributedString(string: newChunk, attributes: attributes)
+            
+            for match in matches {
+                if let wordRange = Range(match.range, in: newChunk) {
+                    let token = String(newChunk[wordRange])
+                    let attributed = NSAttributedString(string: token, attributes: attributes)
+                    pendingChunks.append(attributed)
+                }
+            }
             
             startIfNeeded()
         }
