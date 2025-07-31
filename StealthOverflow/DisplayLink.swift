@@ -112,9 +112,9 @@ public class DisplayLink {
         if #available(macOS 15.0, *) {
             // Modern display links start automatically
         } else {
-            if let link = displayLink{
-                CVDisplayLinkStart(link as! CVDisplayLink)
-            }
+            if CFGetTypeID(displayLink) == CVDisplayLinkGetTypeID() {
+                CVDisplayLinkStop(unsafeBitCast(displayLink, to: CVDisplayLink.self))
+            }   
         }
     }
     
