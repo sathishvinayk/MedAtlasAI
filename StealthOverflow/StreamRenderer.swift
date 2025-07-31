@@ -6,6 +6,7 @@ enum StreamRenderer {
     final class StreamMessageController{
         let textBlock: TextBlock
         private var attributedCharacterQueue: [NSAttributedString] = []
+        private var fullAttributedString = NSMutableAttributedString()
         private let updateLock = NSLock()
         private var displayLink: CVDisplayLink? = nil
         private var nsDisplayLink: Any? = nil
@@ -16,7 +17,8 @@ enum StreamRenderer {
             self.textBlock = textBlock
         }
 
-        func appendStreamingText(_ newChunk: String, attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14)] ) {
+        func appendStreamingText(_ newChunk: String, 
+            attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.textColor] ) {
             let newCharacters = newChunk.map { char in
                 NSAttributedString(string: String(char), attributes: attributes)
             }
