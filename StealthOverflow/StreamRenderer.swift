@@ -1,16 +1,60 @@
+import Cocoa
+
 // MARK: - STREAMRENDERER.swift
 enum StreamRenderer {
-    final class StreamMessageController() {
-        private let maxWidth: CGFloat
-        init(text: String, maxWidth: CGFloat) {}
+    // MARK: - STREAMMESSAGECONTROLLER.swift
+    final class StreamMessageController{
+        let textBlock: TextBlock
+        private var attributedCharacterQueue: [NSAttributedString] = []
+        private let updateLock = NSLock()
+        private var displayLink: CVDisplayLink? = nil
+        private var nsDisplayLink: Any? = nil
+        
+        private var isAnimating = false
+
+        init(textBlock: TextBlock) {
+            self.textBlock = textBlock
+        }
+
         func appendStreamingText(_ newChunk: String, attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14)] ) {
             let newCharacters = newChunk.map { char in
-                return NSAttributedString(string: String(char), attributes: attributes)
+                NSAttributedString(string: String(char), attributes: attributes)
             }
+            
             updateLock.lock()
             attributedCharacterQueue.append(contentsOf: newCharacters)
-            updateLock.unlock() 
-            startIfNeeded()
+            updateLock.unlock()
+            
+            startStreaming()
+        }
+
+        private func stop() {
+            isAnimating = false   
+        }
+
+        private func startStreaming() {
+            guard !isAnimating else { return }
+            isAnimating = true
+
+            updateLock.lock()
+            let charsToAppend = attributedCharacterQueue
+            attributedCharacterQueue.removeAll()
+            updateLock.unlock()
+
+            fullAttributedString.append(NSAttributedString(attributedString: NSAttributedString(attributedString: NSAttributedString(string: "")))) // placeholder if needed
+
+            DispatchQueue.main.async {
+                let textView = self.textBlock.textView
+                textView.textStorage?.append(NSAttributedString(attributedString: NSAttributedString(attributedString: NSAttributedString(string: "")))) // placeholder
+
+                charsToAppend.forEach { char in
+                    self.fullAttributedString.append(char)
+                }
+
+                textView.textStorage?.setAttributedString(self.fullAttributedString)
+                self.textBlock.updateHeight()
+                textView.scrollToEndOfDocument(nil)
+            }
         }
     }
 
@@ -93,9 +137,9 @@ enum StreamRenderer {
 
         // Text block here
         let textblock = TextBlock(maxWidth: maxWidth)
-        stack.addArrangedSubview(textView)
+        stack.addArrangedSubview(textblock)
 
-        let controller = StreamMessageController(text: "", maxWidth: maxWidth)
+        let controller = StreamMessageController(textBlock: textblock)
 
         // Setup constraints
         NSLayoutConstraint.activate([

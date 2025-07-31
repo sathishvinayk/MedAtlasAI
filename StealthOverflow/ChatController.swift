@@ -7,7 +7,7 @@ class ChatController {
     private let inputHeightConstraint: NSLayoutConstraint?
 
     private var typingIndicator: TypingIndicatorView?
-    private var currentStreamingTextController: StreamingTextController?
+    private var currentStreamingTextController: StreamRenderer.StreamMessageController?
 
     private var assistantResponseBuffer = NSMutableAttributedString()
     private var isInCodeBlock = false
@@ -65,7 +65,7 @@ class ChatController {
 
                 //  self.currentStreamingTextController?.view.removeFromSuperview()
                 //  self.currentStreamingTextController = nil
-                    return
+                    // return
                 }
 
                 // Step 2: Ignore empty chunks
