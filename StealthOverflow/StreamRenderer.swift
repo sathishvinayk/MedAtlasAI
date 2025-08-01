@@ -144,6 +144,7 @@ enum StreamRenderer {
                 if batchSize > 0 {
                     batch = Array(pendingTokens.prefix(batchSize))
                     pendingTokens.removeFirst(batchSize)
+                    // print("Processing batch of \(batchSize) tokens:")
                 }
                 let shouldStop = pendingTokens.isEmpty
             os_unfair_lock_unlock(&updateLock)
@@ -246,6 +247,7 @@ enum StreamRenderer {
         }
 
         func appendText(_ attributedString: NSAttributedString) {
+            // print("attributedString -> \(attributedString)")
             dispatchPrecondition(condition: .onQueue(.main))
             // Check if this is a code block delimiter to add visual separation
             if attributedString.string == "```\n" || attributedString.string == "\n```\n" {
