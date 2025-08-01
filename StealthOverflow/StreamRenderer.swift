@@ -20,6 +20,7 @@ enum StreamRenderer {
 
         private let minFrameInterval: CFTimeInterval = 1/60 // 60fps cap
         private var lastRenderTime: CFTimeInterval = 0
+        private let maxPendingTokens = 1000
 
         init(textBlock: TextBlock) {
             self.textBlock = textBlock
@@ -45,8 +46,22 @@ enum StreamRenderer {
                 }
 
                 os_unfair_lock_lock(&updateLock)
+                // Check if we're approaching the limit
+                if pendingTokens.count + attributedTokens.count > maxPendingTokens {
+                    // Option 1: Drop oldest tokens to make space
+                    let overflow = (pendingTokens.count + attributedTokens.count) - maxPendingTokens
+                    if overflow < pendingTokens.count {
+                        pendingTokens.removeFirst(overflow)
+                    } else {
+                        pendingTokens.removeAll()
+                    }
+                    
+                    // Option 2: Alternatively, you could choose to ignore the new tokens
+                    // when the buffer is full by returning early here
+                }
+
                 self.pendingTokens += attributedTokens
-                defer { os_unfair_lock_unlock(&updateLock) }
+                os_unfair_lock_unlock(&updateLock)
                 
                 DispatchQueue.main.async {
                     self.startIfNeeded()
@@ -62,12 +77,13 @@ enum StreamRenderer {
             var batch: [(token: TextStreamTokenizer.TokenType, attributedString: NSAttributedString)] = []
 
             os_unfair_lock_lock(&updateLock)
-            let batchSize = min(3, pendingTokens.count) // Process up to 3 tokens per frame
-            if batchSize > 0 {
-                batch = Array(pendingTokens.prefix(batchSize))
-                pendingTokens.removeFirst(batchSize)
-            }
-            let shouldStop = pendingTokens.isEmpty
+                let dynamicBatchSize = min(5, max(1, pendingTokens.count / 20 + 1))
+                let batchSize = min(dynamicBatchSize, pendingTokens.count)
+                if batchSize > 0 {
+                    batch = Array(pendingTokens.prefix(batchSize))
+                    pendingTokens.removeFirst(batchSize)
+                }
+                let shouldStop = pendingTokens.isEmpty
             os_unfair_lock_unlock(&updateLock)
 
             guard !batch.isEmpty else {
@@ -83,7 +99,17 @@ enum StreamRenderer {
                 }
             }
             self.lastRenderTime = currentTime
-            if shouldStop {
+
+            // If we still have a large backlog, schedule immediately
+            os_unfair_lock_lock(&updateLock)
+            let hasLargeBacklog = pendingTokens.count > maxPendingTokens / 2
+            os_unfair_lock_unlock(&updateLock)
+            
+            if hasLargeBacklog {
+                DispatchQueue.main.async {
+                    self.processPendingUpdates()
+                }
+            } else if shouldStop {
                 stop()
             }
         }
@@ -113,13 +139,21 @@ enum StreamRenderer {
     }
 
     class TextBlock: NSView {
-        let textView: NSTextView
+        private var textView: NSTextView
         private var heightConstraint: NSLayoutConstraint?
         private let maxWidth: CGFloat
     
         init(maxWidth: CGFloat) {
             self.maxWidth = maxWidth
-            self.textView = NSTextView()
+
+            let textStorage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
+            textStorage.addLayoutManager(layoutManager)
+            let textContainer = NSTextContainer(containerSize: NSSize(width: maxWidth, height: .greatestFiniteMagnitude))
+            layoutManager.addTextContainer(textContainer)
+
+            self.textView = NSTextView(frame: .zero, textContainer: textContainer)
+
             super.init(frame: .zero)
             setupTextView()
         }
@@ -129,14 +163,6 @@ enum StreamRenderer {
         }
 
         private func setupTextView() {
-            let textStorage = NSTextStorage()
-            let layoutManager = NSLayoutManager()
-            textStorage.addLayoutManager(layoutManager)
-            
-            let textContainer = NSTextContainer(containerSize: NSSize(width: maxWidth, height: .greatestFiniteMagnitude))
-            layoutManager.addTextContainer(textContainer)
-            textView.layoutManager?.replaceTextStorage(textStorage)
-
             textView.translatesAutoresizingMaskIntoConstraints = false
             textView.isEditable = false
             textView.isSelectable = true
@@ -163,11 +189,6 @@ enum StreamRenderer {
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.1
                 context.allowsImplicitAnimation = true
-                
-                if textView.textStorage == nil {
-                    textView.layoutManager?.replaceTextStorage(NSTextStorage())
-                }
-                
                 textView.textStorage?.append(attributedString)
                 updateHeight()
             })
