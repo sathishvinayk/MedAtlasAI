@@ -22,8 +22,74 @@ enum StreamRenderer {
         private var lastRenderTime: CFTimeInterval = 0
         private let maxPendingTokens = 1000
 
+        private var isInCodeBlock = false
+        private var codeBlockAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+            .foregroundColor: NSColor.textColor,
+            .backgroundColor: NSColor.controlBackgroundColor
+        ]
+
         init(textBlock: TextBlock) {
             self.textBlock = textBlock
+        }
+
+        private func createAttributedString(for token: TextStreamTokenizer.TokenType) -> (TextStreamTokenizer.TokenType, NSAttributedString) {
+            let attributes = isInCodeBlock ? codeBlockAttributes : currentAttributes
+            
+            switch token {
+            case .word(let text), .punctuation(let text), 
+                .whitespace(let text), .special(let text):
+                return (token, NSAttributedString(string: text, attributes: attributes))
+                
+            case .newline:
+                return (token, NSAttributedString(string: "\n", attributes: attributes))
+                
+            case .bold(let text):
+                var boldAttributes = attributes
+                boldAttributes[.font] = NSFont.boldSystemFont(ofSize: (attributes[.font] as? NSFont)?.pointSize ?? 14)
+                return (token, NSAttributedString(string: text, attributes: boldAttributes))
+                
+            case .italic(let text):
+                var italicAttributes = attributes
+                if let currentFont = attributes[.font] as? NSFont {
+                    italicAttributes[.font] = NSFontManager.shared.convert(
+                        currentFont,
+                        toHaveTrait: .italicFontMask
+                    )
+                } else {
+                    italicAttributes[.font] = NSFontManager.shared.convert(
+                        NSFont.systemFont(ofSize: 14),
+                        toHaveTrait: .italicFontMask
+                    )
+                }
+                return (token, NSAttributedString(string: text, attributes: italicAttributes))
+                
+            case .inlineCode(let text):
+                var codeAttributes = attributes
+                codeAttributes[.font] = NSFont.monospacedSystemFont(ofSize: (attributes[.font] as? NSFont)?.pointSize ?? 12, weight: .regular)
+                codeAttributes[.backgroundColor] = NSColor.controlBackgroundColor.withAlphaComponent(0.3)
+                return (token, NSAttributedString(string: text, attributes: codeAttributes))
+                
+            case .codeBlockStart:
+                isInCodeBlock = true
+                return (token, NSAttributedString(string: "\n```\n", attributes: codeBlockAttributes))
+                
+            case .codeBlockEnd:
+                isInCodeBlock = false
+                return (token, NSAttributedString(string: "```\n", attributes: codeBlockAttributes))
+                
+            case .codeBlockContent(let text):
+                return (token, NSAttributedString(string: text, attributes: codeBlockAttributes))
+                
+            case .link(let text, let url):
+                var linkAttributes = attributes
+                linkAttributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                linkAttributes[.foregroundColor] = NSColor.linkColor
+                if let url = url {
+                    linkAttributes[.link] = url
+                }
+                return (token, NSAttributedString(string: text, attributes: linkAttributes))
+            }
         }
 
         func appendStreamingText(_ newChunk: String, 
@@ -31,18 +97,14 @@ enum StreamRenderer {
                 .font: NSFont.systemFont(ofSize: 14),
                 .foregroundColor: NSColor.textColor]) 
         {
+            currentAttributes = attributes
             tokenQueue.async { [weak self] in
                 guard let self = self else { return }
+                print("chunk\(newChunk)")
 
                 let tokens = tokenizer.tokenize(newChunk)
                 let attributedTokens = tokens.map { token in
-                    switch token {
-                        case .word(let text), .punctuation(let text), 
-                            .whitespace(let text), .special(let text):
-                            return (token, NSAttributedString(string: text, attributes: attributes))
-                        case .newline:
-                            return (token, NSAttributedString(string: "\n", attributes: attributes))
-                    }
+                    self.createAttributedString(for: token)
                 }
 
                 os_unfair_lock_lock(&updateLock)
@@ -185,14 +247,19 @@ enum StreamRenderer {
 
         func appendText(_ attributedString: NSAttributedString) {
             dispatchPrecondition(condition: .onQueue(.main))
-            print("Appending text: \(attributedString.string)") // Debug print
+            // Check if this is a code block delimiter to add visual separation
+            if attributedString.string == "```\n" || attributedString.string == "\n```\n" {
+                let separator = NSAttributedString(string: "\n", attributes: [
+                    .font: NSFont.systemFont(ofSize: 4)
+                ])
+                textView.textStorage?.append(separator)
+            }
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.1
                 context.allowsImplicitAnimation = true
                 textView.textStorage?.append(attributedString)
                 updateHeight()
             })
-
         }
 
         func appendNewline() {
