@@ -52,7 +52,11 @@ final class TextStreamTokenizer {
     }
 
     private func classifyRawText(_ text: String) -> [TokenType] {
-        return text.map { classify(String($0)) }
+        var result: [TokenType] = []
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .byComposedCharacterSequences) { substring, _, _, _ in
+            result.append(self.classify(substring!))
+        }
+        return result
     }
 }
 
