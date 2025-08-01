@@ -52,11 +52,95 @@ final class TextStreamTokenizer {
     }
 
     private func classifyRawText(_ text: String) -> [TokenType] {
-        var result: [TokenType] = []
-        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .byComposedCharacterSequences) { substring, _, _, _ in
-            result.append(self.classify(substring!))
+        var tokens: [TokenType] = []
+        var currentWhitespace = ""
+        var currentWord = ""
+        var iterator = text.makeIterator()
+        
+        while let char = iterator.next() {
+            let charStr = String(char)
+            
+            // Fast-path for whitespace/newline
+            if char.isWhitespace {
+                if char == "\n" {
+                    flushAccumulators(&tokens, &currentWhitespace, &currentWord)
+                    tokens.append(.newline)
+                    continue
+                }
+                
+                if !currentWord.isEmpty {
+                    tokens.append(classify(currentWord))
+                    currentWord = ""
+                }
+                currentWhitespace.append(char)
+                continue
+            }
+            
+            // Enhanced character classification
+            let charType: TokenType
+            if isEmoji(char) {
+                charType = .special(charStr)  // or .emoji(charStr) if you add that case
+            } else if isSymbol(char) {
+                charType = .special(charStr)  // or .symbol(charStr)
+            } else {
+                charType = classifyCharacter(char, charStr: charStr)
+            }
+            
+            switch charType {
+            case .punctuation, .special:
+                flushAccumulators(&tokens, &currentWhitespace, &currentWord)
+                tokens.append(charType)
+                
+            case .word:
+                currentWord.append(char)
+                
+            case .whitespace, .newline:
+                assertionFailure("Should have been handled by whitespace fast-path")
+            }
         }
-        return result
+        
+        flushAccumulators(&tokens, &currentWhitespace, &currentWord)
+        return tokens
+    }
+
+    // Character classification helpers
+    private func isEmoji(_ char: Character) -> Bool {
+        let scalar = char.unicodeScalars.first!
+        return scalar.properties.isEmoji
+    }
+
+    private func isSymbol(_ char: Character) -> Bool {
+        return char.unicodeScalars.contains { scalar in
+            CharacterSet.symbols.contains(scalar) ||
+            CharacterSet.nonBaseCharacters.contains(scalar) ||
+            (scalar.properties.generalCategory == .otherSymbol)
+        }
+    }
+
+    // Optimized character classification
+    private func classifyCharacter(_ char: Character, charStr: String) -> TokenType {
+        // Fast path for ASCII punctuation
+        if char.unicodeScalars.count == 1, 
+        let scalar = char.unicodeScalars.first,
+        CharacterSet.punctuationCharacters.contains(scalar) {
+            return .punctuation(charStr)
+        }
+        
+        // Full classification for complex characters
+        return classify(charStr)
+    }
+
+    private func flushAccumulators(_ tokens: inout [TokenType],
+                                _ whitespace: inout String,
+                                _ word: inout String) {
+        if !whitespace.isEmpty {
+            tokens.append(.whitespace(whitespace))
+            whitespace = ""
+        }
+        if !word.isEmpty {
+            tokens.append(classify(word))
+            word = ""
+        }
     }
 }
 
@@ -65,10 +149,9 @@ private extension String {
     var isWhitespace: Bool {
         return trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    
+
     var isPunctuation: Bool {
-        guard count == 1, let scalar = unicodeScalars.first else { return false }
-        return CharacterSet.punctuationCharacters.contains(scalar)
+        return !isEmpty && unicodeScalars.allSatisfy { CharacterSet.punctuationCharacters.contains($0) }
     }
     
     var isSpecialPattern: Bool {
