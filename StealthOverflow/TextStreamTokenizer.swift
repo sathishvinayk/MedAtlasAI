@@ -20,27 +20,68 @@ final class TextStreamTokenizer {
         
         var isListMarker: Bool {
             switch self {
-            case .word(let str) where str.range(of: #"^\d+\."#, options: .regularExpression) != nil:
-                return true
-            case .punctuation(let str) where ["•", "▪", "‣"].contains(str):
-                return true
+            case .word(let str):
+                // Match patterns like: 1., 2., a., b., i., ii.
+                if str.range(of: #"^(\d+|[a-z]|[ivx]+)\."#, options: .regularExpression) != nil {
+                    return true
+                }
+                // Match patterns like: 1), a), i)
+                if str.range(of: #"^(\d+|[a-z]|[ivx]+)\)"#, options: .regularExpression) != nil {
+                    return true
+                }
+                return false
+                
+            case .special(let str):
+                return str.range(of: #"^(\d+|[a-z]|[ivx]+)[.)]"#, options: .regularExpression) != nil
+                
+            case .punctuation(let str):
+                return ["•", "▪", "‣", "-", "*"].contains(str)
+                
             default:
                 return false
             }
         }
+        
+        var isNumberFollowedByPunctuation: Bool {
+            if case .word(let str) = self {
+                return str.range(of: #"^\d+[.)]"#, options: .regularExpression) != nil
+            }
+            if case .special(let str) = self {
+                return str.range(of: #"^\d+[.)]"#, options: .regularExpression) != nil
+            }
+            return false
+        }
     }
+    
     struct LayoutProcessor {
         func process(tokens: [TokenType]) -> [TokenType] {
             var processed: [TokenType] = []
             var buffer: [TokenType] = []
+            var lastWasNewline = true
             
             for token in tokens {
+                if case .word(let str) = token, let splitTokens = splitNumberPunctuationToken(str) {
+                    buffer.append(splitTokens.0)
+                    buffer.append(splitTokens.1)
+                    continue
+                }
+                
                 buffer.append(token)
                 
-                if shouldInsertNewline(after: buffer) {
+                if shouldInsertNewline(buffer: buffer, lastWasNewline: lastWasNewline) {
+                    if !processed.isEmpty && processed.last != .newline {
+                        processed.append(.newline)
+                    }
                     processed.append(contentsOf: buffer)
                     processed.append(.newline)
                     buffer.removeAll()
+                    lastWasNewline = true
+                } else {
+                    if case .newline = token {
+                        lastWasNewline = true
+                    } else if !token.isSingleSpace {
+                        lastWasNewline = false
+                    }
                 }
             }
             
@@ -48,12 +89,58 @@ final class TextStreamTokenizer {
             return processed
         }
         
-        private func shouldInsertNewline(after tokens: [TokenType]) -> Bool {
-            guard tokens.count >= 3 else { return false }
-            let lastThree = Array(tokens.suffix(3)) // Convert to new array
-            return lastThree[0].isColon &&
-                   lastThree[1].isSingleSpace &&
-                   lastThree[2].isListMarker
+        private func splitNumberPunctuationToken(_ str: String) -> (TokenType, TokenType)? {
+            guard let regex = try? NSRegularExpression(pattern: #"^(\d+)([.)])(\w*)"#) else {
+                return nil
+            }
+            
+            let nsRange = NSRange(str.startIndex..<str.endIndex, in: str)
+            guard let match = regex.firstMatch(in: str, options: [], range: nsRange),
+                  match.numberOfRanges >= 3 else {
+                return nil
+            }
+            
+            var numberPart = ""
+            var punctuation = ""
+            var remaining = ""
+            
+            if let numberRange = Range(match.range(at: 1), in: str) {
+                numberPart = String(str[numberRange])
+            }
+            
+            if let punctuationRange = Range(match.range(at: 2), in: str) {
+                punctuation = String(str[punctuationRange])
+            }
+            
+            if match.numberOfRanges > 2, let remainingRange = Range(match.range(at: 3), in: str) {
+                remaining = String(str[remainingRange])
+            }
+            
+            guard !numberPart.isEmpty && !punctuation.isEmpty else {
+                return nil
+            }
+            
+            let numberToken: TokenType = .special(numberPart + punctuation)
+            let wordToken: TokenType = remaining.isEmpty ? .whitespace(" ") : .word(remaining)
+            
+            return (numberToken, wordToken)
+        }
+        
+        private func shouldInsertNewline(buffer: [TokenType], lastWasNewline: Bool) -> Bool {
+            guard !buffer.isEmpty else { return false }
+            
+            if buffer.count >= 2 {
+                let pattern1 = buffer[0].isListMarker && buffer[1].isSingleSpace
+                let pattern2 = buffer[0].isNumberFollowedByPunctuation
+                let pattern3 = buffer.count >= 3 && 
+                             buffer[0].isColon && 
+                             buffer[1].isSingleSpace && 
+                             (buffer[2].isListMarker || buffer[2].isNumberFollowedByPunctuation)
+                
+                return pattern1 || pattern2 || pattern3
+            }
+            
+            return lastWasNewline && (buffer[0].isListMarker || buffer[0].isNumberFollowedByPunctuation)
         }
     }
     
@@ -81,7 +168,6 @@ final class TextStreamTokenizer {
             tokens.append(contentsOf: classifyRawText(trailing))
         }
 
-        // ✅ Critical fix: Process tokens through layout processor
         return LayoutProcessor().process(tokens: tokens)
     }
 
@@ -101,42 +187,50 @@ final class TextStreamTokenizer {
         var tokens: [TokenType] = []
         var currentWhitespace = ""
         var currentWord = ""
-        var iterator = text.makeIterator()
+        var iterator = PeekingIterator(text.makeIterator())
         
         while let char = iterator.next() {
-            // Handle grapheme clusters properly
             let charStr = String(char)
             
-            // Fast-path for whitespace/newline
             if char.isWhitespace {
                 if char == "\n" {
                     flushAccumulators(&tokens, &currentWhitespace, &currentWord)
                     tokens.append(.newline)
                     continue
                 }
-                
+
                 if !currentWord.isEmpty {
-                    tokens.append(classify(currentWord))
+                    if let (numberToken, remainingToken) = splitNumberPunctuationToken(currentWord) {
+                        tokens.append(numberToken)
+                        if case .word(let remaining) = remainingToken, !remaining.isEmpty {
+                            tokens.append(remainingToken)
+                        }
+                    } else {
+                        tokens.append(classify(currentWord))
+                    }
                     currentWord = ""
                 }
                 currentWhitespace.append(char)
                 continue
             }
             
-            // Classify the character
             let charType = classifyCharacter(char, charStr: charStr)
             
             switch charType {
-            case .punctuation, .special:
-                flushAccumulators(&tokens, &currentWhitespace, &currentWord)
-                tokens.append(charType)
+            case .punctuation(let punct):
+                if !currentWord.isEmpty, currentWord.range(of: #"^\d+$"#, options: .regularExpression) != nil {
+                    currentWord.append(punct)
+                    tokens.append(.special(currentWord))
+                    currentWord = ""
+                } else {
+                    flushAccumulators(&tokens, &currentWhitespace, &currentWord)
+                    tokens.append(charType)
+                }
                 
-            case .word:
+            case .special, .word:
                 currentWord.append(char)
-
-            case .whitespace, .newline:
-                // These cases should already be handled by the fast-path above
-                assertionFailure("Should have been handled by whitespace fast-path")
+                
+            default:
                 continue
             }
         }
@@ -144,8 +238,45 @@ final class TextStreamTokenizer {
         flushAccumulators(&tokens, &currentWhitespace, &currentWord)
         return tokens
     }
+    
+    private func splitNumberPunctuationToken(_ str: String) -> (TokenType, TokenType)? {
+        guard let regex = try? NSRegularExpression(pattern: #"^(\d+)([.)])(\w*)"#) else {
+            return nil
+        }
+        
+        let nsRange = NSRange(str.startIndex..<str.endIndex, in: str)
+        guard let match = regex.firstMatch(in: str, options: [], range: nsRange),
+              match.numberOfRanges >= 3 else {
+            return nil
+        }
+        
+        var numberPart = ""
+        var punctuation = ""
+        var remaining = ""
+        
+        if let numberRange = Range(match.range(at: 1), in: str) {
+            numberPart = String(str[numberRange])
+        }
+        
+        if let punctuationRange = Range(match.range(at: 2), in: str) {
+            punctuation = String(str[punctuationRange])
+        }
+        
+        if match.numberOfRanges > 2, let remainingRange = Range(match.range(at: 3), in: str) {
+            remaining = String(str[remainingRange])
+        }
+        
+        guard !numberPart.isEmpty && !punctuation.isEmpty else {
+            return nil
+        }
+        
+        let numberToken: TokenType = .special(numberPart + punctuation)
+        let wordToken: TokenType = remaining.isEmpty ? .whitespace(" ") : .word(remaining)
+        
+        return (numberToken, wordToken)
+    }
+    
     private func isEmoji(_ char: Character) -> Bool {
-        // Check the entire grapheme cluster
         return char.unicodeScalars.contains { scalar in
             scalar.properties.isEmoji || 
             scalar.properties.isEmojiPresentation
@@ -153,41 +284,38 @@ final class TextStreamTokenizer {
     }
 
     private func isEmojiSequence(_ char: Character) -> Bool {
-        // For complex emoji sequences
         let scalars = char.unicodeScalars
         guard scalars.count > 1 else { return false }
         
         return scalars.contains { scalar in
             scalar.properties.isEmoji ||
             scalar.properties.isEmojiPresentation ||
-            scalar.value == 0x200D // ZWJ (zero-width joiner)
+            scalar.value == 0x200D
         }
     }
 
-    // Optimized character classification
     private func classifyCharacter(_ char: Character, charStr: String) -> TokenType {
-         // Handle emoji first
         if isEmoji(char) || isEmojiSequence(char) {
             return .special(charStr)
         }
-        // Fast path for ASCII punctuation
+        
         if char.unicodeScalars.count == 1, 
-        let scalar = char.unicodeScalars.first,
-        CharacterSet.punctuationCharacters.contains(scalar) {
+           let scalar = char.unicodeScalars.first,
+           CharacterSet.punctuationCharacters.contains(scalar) {
             return .punctuation(charStr)
         }
         
-        // Full classification for complex characters
         return classify(charStr)
     }
 
     private func flushAccumulators(_ tokens: inout [TokenType],
-                                _ whitespace: inout String,
-                                _ word: inout String) {
+                                  _ whitespace: inout String,
+                                  _ word: inout String) {
         if !whitespace.isEmpty {
             tokens.append(.whitespace(whitespace))
             whitespace = ""
         }
+
         if !word.isEmpty {
             tokens.append(classify(word))
             word = ""
@@ -211,5 +339,39 @@ private extension String {
             #"`{1,3}.*?`{1,3}"#
         ]
         return patterns.contains { range(of: $0, options: .regularExpression) != nil }
+    }
+}
+
+private extension Character {
+    var isWhitespace: Bool {
+        return isNewline || unicodeScalars.allSatisfy { CharacterSet.whitespaces.contains($0) }
+    }
+    
+    var isNewline: Bool {
+        return unicodeScalars.allSatisfy { CharacterSet.newlines.contains($0) }
+    }
+}
+
+struct PeekingIterator<T: IteratorProtocol>: IteratorProtocol {
+    private var iterator: T
+    private var peeked: T.Element?
+    
+    init(_ base: T) {
+        self.iterator = base
+    }
+    
+    mutating func next() -> T.Element? {
+        if let peeked = peeked {
+            self.peeked = nil
+            return peeked
+        }
+        return iterator.next()
+    }
+    
+    mutating func peek() -> T.Element? {
+        if peeked == nil {
+            peeked = iterator.next()
+        }
+        return peeked
     }
 }
