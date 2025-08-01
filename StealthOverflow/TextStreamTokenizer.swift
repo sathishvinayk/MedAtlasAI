@@ -54,13 +54,18 @@ final class TextStreamTokenizer {
     }
     
     struct LayoutProcessor {
+        private let tokenizer: TextStreamTokenizer
+        init(tokenizer: TextStreamTokenizer) {
+            self.tokenizer = tokenizer
+        }
+
         func process(tokens: [TokenType]) -> [TokenType] {
             var processed: [TokenType] = []
             var buffer: [TokenType] = []
             var lastWasNewline = true
             
             for token in tokens {
-                if case .word(let str) = token, let splitTokens = splitNumberPunctuationToken(str) {
+                if case .word(let str) = token, let splitTokens = tokenizer.splitNumberPunctuationToken(str) {
                     buffer.append(splitTokens.0)
                     buffer.append(splitTokens.1)
                     continue
@@ -89,42 +94,42 @@ final class TextStreamTokenizer {
             return processed
         }
         
-        private func splitNumberPunctuationToken(_ str: String) -> (TokenType, TokenType)? {
-            guard let regex = try? NSRegularExpression(pattern: #"^(\d+)([.)])(\w*)"#) else {
-                return nil
-            }
+        // private func splitNumberPunctuationToken(_ str: String) -> (TokenType, TokenType)? {
+        //     guard let regex = try? NSRegularExpression(pattern: #"^(\d+)([.)])\s*(.*)$"#) else {
+        //         return nil
+        //     }
             
-            let nsRange = NSRange(str.startIndex..<str.endIndex, in: str)
-            guard let match = regex.firstMatch(in: str, options: [], range: nsRange),
-                  match.numberOfRanges >= 3 else {
-                return nil
-            }
+        //     let nsRange = NSRange(str.startIndex..<str.endIndex, in: str)
+        //     guard let match = regex.firstMatch(in: str, options: [], range: nsRange),
+        //           match.numberOfRanges >= 3 else {
+        //         return nil
+        //     }
             
-            var numberPart = ""
-            var punctuation = ""
-            var remaining = ""
+        //     var numberPart = ""
+        //     var punctuation = ""
+        //     var remaining = ""
             
-            if let numberRange = Range(match.range(at: 1), in: str) {
-                numberPart = String(str[numberRange])
-            }
+        //     if let numberRange = Range(match.range(at: 1), in: str) {
+        //         numberPart = String(str[numberRange])
+        //     }
             
-            if let punctuationRange = Range(match.range(at: 2), in: str) {
-                punctuation = String(str[punctuationRange])
-            }
+        //     if let punctuationRange = Range(match.range(at: 2), in: str) {
+        //         punctuation = String(str[punctuationRange])
+        //     }
             
-            if match.numberOfRanges > 2, let remainingRange = Range(match.range(at: 3), in: str) {
-                remaining = String(str[remainingRange])
-            }
+        //     if match.numberOfRanges > 2, let remainingRange = Range(match.range(at: 3), in: str) {
+        //         remaining = String(str[remainingRange])
+        //     }
             
-            guard !numberPart.isEmpty && !punctuation.isEmpty else {
-                return nil
-            }
+        //     guard !numberPart.isEmpty && !punctuation.isEmpty else {
+        //         return nil
+        //     }
             
-            let numberToken: TokenType = .special(numberPart + punctuation)
-            let wordToken: TokenType = remaining.isEmpty ? .whitespace(" ") : .word(remaining)
+        //     let numberToken: TokenType = .special(numberPart + punctuation)
+        //     let wordToken: TokenType = remaining.isEmpty ? .whitespace(" ") : .word(remaining)
             
-            return (numberToken, wordToken)
-        }
+        //     return (numberToken, wordToken)
+        // }
         
         private func shouldInsertNewline(buffer: [TokenType], lastWasNewline: Bool) -> Bool {
             guard !buffer.isEmpty else { return false }
@@ -168,7 +173,7 @@ final class TextStreamTokenizer {
             tokens.append(contentsOf: classifyRawText(trailing))
         }
 
-        return LayoutProcessor().process(tokens: tokens)
+        return LayoutProcessor(tokenizer: self).process(tokens: tokens)
     }
 
     private func classify(_ token: String) -> TokenType {
@@ -240,7 +245,7 @@ final class TextStreamTokenizer {
     }
     
     private func splitNumberPunctuationToken(_ str: String) -> (TokenType, TokenType)? {
-        guard let regex = try? NSRegularExpression(pattern: #"^(\d+)([.)])(\w*)"#) else {
+        guard let regex = try? NSRegularExpression(pattern: #"^(\d+)([.)])\s*(.*)$"#) else {
             return nil
         }
         
