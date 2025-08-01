@@ -5,28 +5,21 @@ enum StreamRenderer {
     // MARK: - STREAMMESSAGECONTROLLER.swift
     final class StreamMessageController{
         let textBlock: TextBlock
-        private var attributedCharacterQueue: [NSAttributedString] = []
-        private var fullAttributedString = NSMutableAttributedString()
 
-        private let updateLock = NSLock()
+        private var updateLock = os_unfair_lock()
         private var displayLink: DisplayLink?
         private var isAnimating = false
-        private var framesSinceLastUpdate = 0
-        private let framesPerCharacter = 2 // Adjust for speed (lower = faster)
         private var currentAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: NSColor.textColor
         ]
+        private let tokenQueue = DispatchQueue(label: "com.streamrenderer.tokenqueue", qos: .userInitiated)
 
         private let tokenizer = TextStreamTokenizer()
         private var pendingTokens: [(token: TextStreamTokenizer.TokenType, attributedString: NSAttributedString)] = []
 
         private let minFrameInterval: CFTimeInterval = 1/60 // 60fps cap
         private var lastRenderTime: CFTimeInterval = 0
-
-        private var unprocessedText: String = ""
-        private let wordSeparators = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
-        private var lastChunkSize = 0
 
         init(textBlock: TextBlock) {
             self.textBlock = textBlock
@@ -37,63 +30,69 @@ enum StreamRenderer {
                 .font: NSFont.systemFont(ofSize: 14),
                 .foregroundColor: NSColor.textColor]) 
         {
-            updateLock.lock()
-            defer { updateLock.unlock() }
+            tokenQueue.async { [weak self] in
+                guard let self = self else { return }
 
-            let tokens = tokenizer.tokenize(newChunk)
-            pendingTokens += tokens.map { token in
-                switch token {
-                    case .word(let text), .punctuation(let text), 
-                        .whitespace(let text), .special(let text):
-                        return (token, NSAttributedString(string: text, attributes: attributes))
-                    case .newline:
-                        return (token, NSAttributedString(string: "\n", attributes: attributes))
+                let tokens = tokenizer.tokenize(newChunk)
+                let attributedTokens = tokens.map { token in
+                    switch token {
+                        case .word(let text), .punctuation(let text), 
+                            .whitespace(let text), .special(let text):
+                            return (token, NSAttributedString(string: text, attributes: attributes))
+                        case .newline:
+                            return (token, NSAttributedString(string: "\n", attributes: attributes))
+                    }
+                }
+
+                os_unfair_lock_lock(&updateLock)
+                self.pendingTokens += attributedTokens
+                defer { os_unfair_lock_unlock(&updateLock) }
+                
+                DispatchQueue.main.async {
+                    self.startIfNeeded()
                 }
             }
-            
-            startIfNeeded()
         }
 
         private func processPendingUpdates() {
+            dispatchPrecondition(condition: .onQueue(.main))
             let currentTime = CACurrentMediaTime()
             guard currentTime - lastRenderTime >= minFrameInterval else { return }
 
-            updateLock.lock()
-            defer {updateLock.unlock()}
+            var batch: [(token: TextStreamTokenizer.TokenType, attributedString: NSAttributedString)] = []
 
-            guard !pendingTokens.isEmpty else {
+            os_unfair_lock_lock(&updateLock)
+            let batchSize = min(3, pendingTokens.count) // Process up to 3 tokens per frame
+            if batchSize > 0 {
+                batch = Array(pendingTokens.prefix(batchSize))
+                pendingTokens.removeFirst(batchSize)
+            }
+            let shouldStop = pendingTokens.isEmpty
+            os_unfair_lock_unlock(&updateLock)
+
+            guard !batch.isEmpty else {
                 stop()
                 return
             }
 
-            // Pop the next chunk
-            let (token, attributedString) = pendingTokens.removeFirst()
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-
+            for (token, attributedString) in batch {
                 if case .newline = token {
                     self.textBlock.appendNewline()
                 } else {
                     self.textBlock.appendText(attributedString)
                 }
-                
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = 0.1
-                    context.allowsImplicitAnimation = true
-                    // self.textBlock.appendText(nextChunk)
-                })
-                
-                self.lastRenderTime = currentTime
+            }
+            self.lastRenderTime = currentTime
+            if shouldStop {
+                stop()
             }
         }
 
         private func startIfNeeded() {
             guard !isAnimating else { return }
+            stop()
+
             isAnimating = true
-
-            // framesSinceLastUpdate = 0
-
             displayLink = DisplayLink { [weak self] in
                 self?.processPendingUpdates()
             }
@@ -102,9 +101,14 @@ enum StreamRenderer {
         }
 
         private func stop() {
+            guard isAnimating else { return }
             isAnimating = false
             displayLink?.stop()
             displayLink = nil
+        }
+
+        deinit {
+            stop()
         }
     }
 
@@ -154,19 +158,20 @@ enum StreamRenderer {
         }
 
         func appendText(_ attributedString: NSAttributedString) {
+            dispatchPrecondition(condition: .onQueue(.main))
             print("Appending text: \(attributedString.string)") // Debug print
-            if textView.textStorage == nil {
-                textView.layoutManager?.replaceTextStorage(NSTextStorage())
-            }
-            
-            textView.textStorage?.append(attributedString)
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.1
                 context.allowsImplicitAnimation = true
-                // textView.scrollToEndOfDocument(nil) 
+                
+                if textView.textStorage == nil {
+                    textView.layoutManager?.replaceTextStorage(NSTextStorage())
+                }
+                
+                textView.textStorage?.append(attributedString)
+                updateHeight()
             })
 
-            updateHeight()
         }
 
         func appendNewline() {
