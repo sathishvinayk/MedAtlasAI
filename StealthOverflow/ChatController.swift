@@ -39,7 +39,7 @@ class ChatController {
         typingIndicator = indicator
 
         // assistantResponseBuffer = NSMutableAttributedString()
-        currentStreamingTextController?.clear()
+        // currentStreamingTextController?.clear()
         currentStreamingTextController = nil
 
         chatApiService.fetchGPTResponse(for: prompt) { [weak self] chunk in

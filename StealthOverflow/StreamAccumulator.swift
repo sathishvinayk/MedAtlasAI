@@ -18,7 +18,8 @@ final class StreamAccumulator {
 
     private var buffer = ""
     private var isInCodeBlock = false
-    private var currentLanguage: String?
+    private var codeBlockLanguage: String?
+    private var pendingCodeBlockContent = ""
     private let lock = NSLock()
     
     func process(chunk: String) -> (tokens: [TextStreamTokenizer.TokenType], remainder: String) {
@@ -28,35 +29,59 @@ final class StreamAccumulator {
         buffer += chunk
         var tokens: [TextStreamTokenizer.TokenType] = []
         var processedCount = 0
+
+        // Create a local copy for thread-safe string operations
+        let processingBuffer = buffer
+        let bufferLength = processingBuffer.count
         
-        while processedCount < buffer.count {
-            let remaining = buffer.dropFirst(processedCount)
+        while processedCount < bufferLength {
+            let remaining = processingBuffer.dropFirst(processedCount)
             
             if isInCodeBlock {
+                // Look for closing ```
                 if let endRange = findCodeBlockEnd(in: remaining) {
                     let content = String(remaining[..<endRange.lowerBound])
                     if !content.isEmpty {
-                        tokens.append(.codeBlockContent(content))
+                        pendingCodeBlockContent += content
+                        tokens.append(.codeBlockContent(pendingCodeBlockContent))
+                        pendingCodeBlockContent = ""
                     }
                     tokens.append(.codeBlockEnd)
                     processedCount += remaining.distance(from: remaining.startIndex, to: endRange.upperBound)
                     isInCodeBlock = false
-                    currentLanguage = nil
+                    codeBlockLanguage = nil
                 } else {
+                    // No closing found - buffer everything
+                    pendingCodeBlockContent += remaining
+                    processedCount += remaining.count
                     break
                 }
             } else {
+                // Look for opening ```
                 if let (startRange, language) = findCodeBlockStart(in: remaining) {
-                    let beforeText = String(remaining[..<startRange.lowerBound])
-                    if !beforeText.isEmpty {
-                        tokens += tokenizeNormalText(beforeText)
+                    let beforeCode = String(remaining[..<startRange.lowerBound])
+                    if !beforeCode.isEmpty {
+                        tokens += tokenizeNormalText(beforeCode)
                     }
                     
-                    currentLanguage = language
-                    tokens.append(.codeBlockStart(language: currentLanguage))
+                    // Check for language specifier
+                    let afterTicks = String(remaining[startRange.upperBound...])
+                    let languageEnd = afterTicks.firstIndex(where: { $0.isNewline }) ?? afterTicks.endIndex
+                    let language = String(afterTicks[..<languageEnd]).trimmingCharacters(in: .whitespaces)
+                    
+                    codeBlockLanguage = language.isEmpty ? nil : language
+                    tokens.append(.codeBlockStart(language: codeBlockLanguage))
                     isInCodeBlock = true
+                    
+                    // Calculate how much we processed
+                    let processedUpTo = afterTicks.index(languageEnd, offsetBy: 1, limitedBy: afterTicks.endIndex) ?? languageEnd
                     processedCount += remaining.distance(from: remaining.startIndex, to: startRange.upperBound)
+                    processedCount += afterTicks.distance(from: afterTicks.startIndex, to: processedUpTo)
                 } else {
+                    // Tokenize the remaining text
+                    let textToTokenize = String(remaining)
+                    tokens += tokenizeNormalText(textToTokenize)
+                    processedCount += remaining.count
                     break
                 }
             }
@@ -65,34 +90,39 @@ final class StreamAccumulator {
         if processedCount > 0 {
             buffer.removeFirst(processedCount)
         }
+        
         return (tokens, buffer)
     }
     
     private func findCodeBlockStart(in text: Substring) -> (Range<String.Index>, String?)? {
-        guard let startRange = text.range(of: "```") else { return nil }
+        // Make string operations thread-safe by working on a local copy
+        let localText = String(text)
+        guard let startRange = localText.range(of: "```") else { return nil }
         
-        let afterTicks = text[startRange.upperBound...]
+        let afterTicks = localText[startRange.upperBound...]
         guard let newlineRange = afterTicks.firstIndex(of: "\n") else { return nil }
         
-        let languagePart = text[startRange.upperBound..<newlineRange]
+        let languagePart = localText[startRange.upperBound..<newlineRange]
         let language = String(languagePart)
             .trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "`")))
         
-        return (startRange.lowerBound..<newlineRange, language.isEmpty ? nil : language)
+        // Convert ranges back to the original substring's indices
+        let lowerBound = text.index(text.startIndex, offsetBy: localText.distance(from: localText.startIndex, to: startRange.lowerBound))
+        let upperBound = text.index(text.startIndex, offsetBy: localText.distance(from: localText.startIndex, to: newlineRange))
+        
+        return (lowerBound..<upperBound, language.isEmpty ? nil : language)
     }
-    
+
     private func findCodeBlockEnd(in text: Substring) -> Range<String.Index>? {
         return text.range(of: "```")
     }
     
     func reset() {
-        lock.lock()
-        defer { lock.unlock() }
         buffer = ""
         isInCodeBlock = false
-        currentLanguage = nil
+        codeBlockLanguage = nil
+        pendingCodeBlockContent = ""
     }
-    
     func flush() -> [TextStreamTokenizer.TokenType] {
         lock.lock()
         defer { lock.unlock() }
@@ -100,7 +130,9 @@ final class StreamAccumulator {
         var tokens: [TextStreamTokenizer.TokenType] = []
         if !buffer.isEmpty {
             if isInCodeBlock {
-                tokens.append(.codeBlockContent(buffer))
+                // If we're still in a code block at flush, close it
+                tokens.append(.codeBlockContent(pendingCodeBlockContent + buffer))
+                tokens.append(.codeBlockEnd)
             } else {
                 tokens += tokenizeNormalText(buffer)
             }
@@ -108,7 +140,6 @@ final class StreamAccumulator {
         reset()
         return tokens
     }
-    
     private func tokenizeNormalText(_ text: String) -> [TextStreamTokenizer.TokenType] {
         var tokens: [TextStreamTokenizer.TokenType] = []
         let tokenizer = NLTokenizer(unit: .word)
