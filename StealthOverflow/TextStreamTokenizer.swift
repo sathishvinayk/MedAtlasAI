@@ -152,6 +152,20 @@ final class TextStreamTokenizer {
         }
     }
 
+    private func tokenizeNormalText(_ text: String) -> [TokenType] {
+        var tokens: [TokenType] = []
+        let tokenizer = NLTokenizer(unit: .word)
+        tokenizer.string = text
+        
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            let token = String(text[range])
+            tokens.append(classify(token))
+            return true
+        }
+        
+        return tokens
+    }
+
     func tokenize(_ text: String) -> [TokenType] {
         return tokenizerQueue.sync {
             _unsafeTokenize(text)
@@ -161,15 +175,24 @@ final class TextStreamTokenizer {
     private func _unsafeTokenize(_ text: String) -> [TokenType] {
         var tokens: [TokenType] = []
         let tokenizer = NLTokenizer(unit: .word)
+
+         // Combine with pending backticks and ensure contiguous storage
+        let fullText = (pendingBackticks + text).withCString { _ in 
+            String(pendingBackticks + text)
+        }
         
-        let fullText: String = {
-            let combined = pendingBackticks + text
-            pendingBackticks = ""
-            return combined.withCString { _ in String(combined) }
-        }()
+        // let fullText: String = {
+        //     let combined = pendingBackticks + text
+        //     pendingBackticks = ""
+        //     return combined.withCString { _ in String(combined) }
+        // }()
         
         tokenizer.string = fullText
         var currentIndex = fullText.startIndex
+
+        // Track potential split backticks
+        var potentialBackticks = pendingBackticks
+        pendingBackticks = ""
         
         while currentIndex < fullText.endIndex {
             let remainingText = fullText[currentIndex...]
@@ -197,38 +220,79 @@ final class TextStreamTokenizer {
                     continue
                 }
             }
-            
-            if remainingText.hasPrefix("`") {
+
+            if remainingText.first == "`" {
                 let backtickCount = countConsecutiveBackticks(in: remainingText)
+                let totalBackticks = potentialBackticks.count + backtickCount
                 
-                if backtickCount >= 3 {
-                    guard fullText.distance(from: currentIndex, to: fullText.endIndex) >= 3 else {
-                        pendingBackticks = String(fullText[currentIndex...])
-                        currentIndex = fullText.endIndex
+                if totalBackticks >= 3 {
+                    let backticksToUse = min(3 - potentialBackticks.count, backtickCount)
+                    let backtickEnd = fullText.index(currentIndex, offsetBy: backticksToUse)
+                    
+                    if potentialBackticks.count + backticksToUse == 3 {
+                        // We have our 3 backticks - process as code block
+                        let markerEnd = fullText.index(currentIndex, offsetBy: 3 - potentialBackticks.count)
+                        let afterMarker = fullText[markerEnd...]
+                        
+                        let language: String?
+                        if let newlineRange = afterMarker.range(of: "\n") {
+                            language = String(fullText[markerEnd..<newlineRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+                            currentIndex = newlineRange.upperBound
+                        } else {
+                            language = nil
+                            currentIndex = markerEnd
+                        }
+                        
+                        tokens.append(.codeBlockStart(language: language))
+                        inCodeBlock = true
+                        potentialBackticks = ""
+                        continue
+                    } else {
+                        // Still need more backticks
+                        pendingBackticks = potentialBackticks + String(fullText[currentIndex..<backtickEnd])
+                        currentIndex = backtickEnd
                         continue
                     }
-                    
-                    let markerEnd = fullText.index(currentIndex, offsetBy: 3, limitedBy: fullText.endIndex) ?? fullText.endIndex
-                    let afterMarker = fullText[markerEnd...]
-                    let language: String?
-                    
-                    if let newlineRange = afterMarker.range(of: "\n") {
-                        language = String(fullText[markerEnd..<newlineRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-                        currentIndex = newlineRange.upperBound
-                    } else {
-                        language = nil
-                        currentIndex = markerEnd
-                    }
-                    
-                    tokens.append(.codeBlockStart(language: language))
-                    inCodeBlock = true
-                    continue
                 } else {
-                    pendingBackticks = String(fullText[currentIndex..<fullText.index(currentIndex, offsetBy: backtickCount)])
+                    // Not enough backticks yet
+                    pendingBackticks = potentialBackticks + String(fullText[currentIndex..<fullText.index(currentIndex, offsetBy: backtickCount)])
                     currentIndex = fullText.index(currentIndex, offsetBy: backtickCount)
                     continue
                 }
             }
+
+            
+            // if remainingText.hasPrefix("`") {
+            //     let backtickCount = countConsecutiveBackticks(in: remainingText)
+                
+            //     if backtickCount >= 3 {
+            //         guard fullText.distance(from: currentIndex, to: fullText.endIndex) >= 3 else {
+            //             pendingBackticks = String(fullText[currentIndex...])
+            //             currentIndex = fullText.endIndex
+            //             continue
+            //         }
+                    
+            //         let markerEnd = fullText.index(currentIndex, offsetBy: 3, limitedBy: fullText.endIndex) ?? fullText.endIndex
+            //         let afterMarker = fullText[markerEnd...]
+            //         let language: String?
+                    
+            //         if let newlineRange = afterMarker.range(of: "\n") {
+            //             language = String(fullText[markerEnd..<newlineRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            //             currentIndex = newlineRange.upperBound
+            //         } else {
+            //             language = nil
+            //             currentIndex = markerEnd
+            //         }
+                    
+            //         tokens.append(.codeBlockStart(language: language))
+            //         inCodeBlock = true
+            //         continue
+            //     } else {
+            //         pendingBackticks = String(fullText[currentIndex..<fullText.index(currentIndex, offsetBy: backtickCount)])
+            //         currentIndex = fullText.index(currentIndex, offsetBy: backtickCount)
+            //         continue
+            //     }
+            // }
             
             let nextChar = fullText[currentIndex]
             if nextChar.isNewline {
@@ -242,12 +306,30 @@ final class TextStreamTokenizer {
             } else {
                 guard currentIndex < fullText.endIndex else { break }
                 
-                let tokenRange = makeSafeTokenRange(from: currentIndex, in: fullText)
-                let tokenRanges = getValidTokenRanges(tokenizer: tokenizer, range: tokenRange, in: fullText)
+                // Create a stable text copy for this operation
+                let stableText = fullText.withCString { String(cString: $0) }
+                let stableIndex = stableText.index(
+                    stableText.startIndex, 
+                    offsetBy: fullText.distance(from: fullText.startIndex, to: currentIndex)
+                )
                 
-                if let (range, token) = getFirstValidToken(from: tokenRanges, currentIndex: currentIndex, in: fullText) {
+                let tokenRange = makeSafeTokenRange(from: stableIndex, in: stableText)
+                let tokenRanges = getValidTokenRanges(
+                    tokenizer: NLTokenizer(unit: .word), 
+                    range: tokenRange, 
+                    in: stableText
+                )
+                
+                if let (range, token) = getFirstValidToken(
+                    from: tokenRanges, 
+                    currentIndex: stableIndex, 
+                    in: stableText
+                ) {
                     tokens.append(token)
-                    currentIndex = range.upperBound
+                    currentIndex = fullText.index(
+                        currentIndex, 
+                        offsetBy: stableText.distance(from: stableIndex, to: range.upperBound)
+                    )
                 } else {
                     currentIndex = processSingleCharacter(at: currentIndex, in: fullText, tokens: &tokens)
                 }
@@ -270,11 +352,28 @@ final class TextStreamTokenizer {
         range: Range<String.Index>,
         in text: String
     ) -> [Range<String.Index>] {
-        tokenizer.string = text
-        return tokenizer.tokens(for: range).filter {
-            $0.lowerBound >= range.lowerBound &&
-            $0.upperBound <= range.upperBound &&
-            $0.lowerBound < $0.upperBound
+        // 1. Create a local copy of the string to ensure lifetime
+        let localText = text.withCString { String(cString: $0) }
+        
+        // 2. Verify indices are still valid
+        guard range.lowerBound >= localText.startIndex,
+            range.upperBound <= localText.endIndex,
+            range.lowerBound < range.upperBound else {
+            return []
+        }
+        
+        // 3. Use a new tokenizer instance to avoid thread issues
+        let localTokenizer = NLTokenizer(unit: .word)
+        localTokenizer.string = localText
+        
+        // 4. Get tokens with additional validation
+        return localTokenizer.tokens(for: range).compactMap { range in
+            guard range.lowerBound >= localText.startIndex,
+                range.upperBound <= localText.endIndex,
+                range.lowerBound < range.upperBound else {
+                return nil
+            }
+            return range
         }
     }
     

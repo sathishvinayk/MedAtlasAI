@@ -13,6 +13,7 @@ enum StreamRenderer {
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: NSColor.textColor
         ]
+        private let accumulator = StreamAccumulator()
         private let tokenQueue = DispatchQueue(label: "com.streamrenderer.tokenqueue", qos: .userInitiated)
 
         private let tokenizer = TextStreamTokenizer()
@@ -102,31 +103,36 @@ enum StreamRenderer {
                 guard let self = self else { return }
                 print("chunk\(newChunk)")
 
-                let tokens = tokenizer.tokenize(newChunk)
-                let attributedTokens = tokens.map { token in
-                    self.createAttributedString(for: token)
-                }
+                let readyChunks = self.accumulator.process(chunk: newChunk)
+                for chunk in readyChunks {
+                    print("Processing meaningful chunk: \(chunk.prefix(100))...")
 
-                os_unfair_lock_lock(&updateLock)
-                // Check if we're approaching the limit
-                if pendingTokens.count + attributedTokens.count > maxPendingTokens {
-                    // Option 1: Drop oldest tokens to make space
-                    let overflow = (pendingTokens.count + attributedTokens.count) - maxPendingTokens
-                    if overflow < pendingTokens.count {
-                        pendingTokens.removeFirst(overflow)
-                    } else {
-                        pendingTokens.removeAll()
+                    let tokens = tokenizer.tokenize(newChunk)
+                    let attributedTokens = tokens.map { 
+                        self.createAttributedString(for: $0)
                     }
-                    
-                    // Option 2: Alternatively, you could choose to ignore the new tokens
-                    // when the buffer is full by returning early here
-                }
 
-                self.pendingTokens += attributedTokens
-                os_unfair_lock_unlock(&updateLock)
-                
-                DispatchQueue.main.async {
-                    self.startIfNeeded()
+                    os_unfair_lock_lock(&updateLock)
+                    // Check if we're approaching the limit
+                    if pendingTokens.count + attributedTokens.count > maxPendingTokens {
+                        // Option 1: Drop oldest tokens to make space
+                        let overflow = (pendingTokens.count + attributedTokens.count) - maxPendingTokens
+                        if overflow < pendingTokens.count {
+                            pendingTokens.removeFirst(overflow)
+                        } else {
+                            pendingTokens.removeAll()
+                        }
+                        
+                        // Option 2: Alternatively, you could choose to ignore the new tokens
+                        // when the buffer is full by returning early here
+                    }
+
+                    self.pendingTokens += attributedTokens
+                    os_unfair_lock_unlock(&updateLock)
+                    
+                    DispatchQueue.main.async {
+                        self.startIfNeeded()
+                    }
                 }
             }
         }
