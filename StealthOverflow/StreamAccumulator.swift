@@ -63,16 +63,16 @@ final class StreamAccumulator {
                     if !beforeCode.isEmpty {
                         tokens += tokenizeNormalText(beforeCode)
                     }
+
+                    codeBlockLanguage = language
+                    tokens.append(.codeBlockStart(language: codeBlockLanguage))
+                    isInCodeBlock = true
                     
                     // Check for language specifier
                     let afterTicks = String(remaining[startRange.upperBound...])
                     let languageEnd = afterTicks.firstIndex(where: { $0.isNewline }) ?? afterTicks.endIndex
                     let language = String(afterTicks[..<languageEnd]).trimmingCharacters(in: .whitespaces)
-                    
-                    codeBlockLanguage = language.isEmpty ? nil : language
-                    tokens.append(.codeBlockStart(language: codeBlockLanguage))
-                    isInCodeBlock = true
-                    
+      
                     // Calculate how much we processed
                     let processedUpTo = afterTicks.index(languageEnd, offsetBy: 1, limitedBy: afterTicks.endIndex) ?? languageEnd
                     processedCount += remaining.distance(from: remaining.startIndex, to: startRange.upperBound)
@@ -181,7 +181,7 @@ extension TextStreamTokenizer.TokenType {
             return .inlineCode(text.trimmingCharacters(in: ["`"]))
         } else if text.isURL {
             return .link(text: text, url: URL(string: text))
-        } else if let (numberToken, wordToken) = splitNumberPunctuationToken(text) {
+        } else if let (numberToken, _) = splitNumberPunctuationToken(text) {
             return numberToken
         } else {
             return .word(text)
@@ -202,7 +202,7 @@ extension TextStreamTokenizer.TokenType {
         let remaining = match.numberOfRanges > 2 ? 
             String(text[Range(match.range(at: 3), in: text)!]) : ""
         
-        return (.special(number + punctuation), remaining.isEmpty ? .whitespace(" ") : .word(remaining))
+        return (.special(number + punctuation), .word(remaining))
     }
 }
 
