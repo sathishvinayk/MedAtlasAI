@@ -1,56 +1,106 @@
-import Foundation
+// StreamAccumulator.swift
+import Cocoa
 import NaturalLanguage
 
-final class CodeBlockAccumulator {
-    // MARK: - State Tracking
+final class StreamAccumulator {
+    // Pre-compiled regexes
+    static let numberPunctuationRegex: NSRegularExpression = {
+        try! NSRegularExpression(pattern: #"^(\d+)([.)])\s*(.*)$"#)
+    }()
+    
+    static let listMarkerRegex: NSRegularExpression = {
+        try! NSRegularExpression(pattern: #"^(\d+|[a-z]|[ivx]+)[.)]"#, options: .caseInsensitive)
+    }()
+    
+    static let urlRegex: NSRegularExpression = {
+        try! NSRegularExpression(pattern: #"https?://(?:www\.)?[^\s]+"#)
+    }()
+
     private var buffer = ""
     private var isInCodeBlock = false
     private var currentLanguage: String?
-    private var pendingBackticks = ""
-    
-    // MARK: - Thread Safety
     private let lock = NSLock()
     
-    // MARK: - Constants
-    private static let codeBlockPattern = #"(?<ticks>`{3,})(?<language>[a-z]*)?"#
-    private static let codeBlockRegex = try! NSRegularExpression(
-        pattern: codeBlockPattern,
-        options: .caseInsensitive
-    )
-    
-    // MARK: - Public Interface
-    func process(chunk: String) -> [TokenType] {
+    func process(chunk: String) -> (tokens: [TextStreamTokenizer.TokenType], remainder: String) {
         lock.lock()
         defer { lock.unlock() }
         
         buffer += chunk
-        var tokens: [TokenType] = []
+        var tokens: [TextStreamTokenizer.TokenType] = []
+        var processedCount = 0
         
-        while !buffer.isEmpty {
-            if isInCodeBlock {
-                tokens += processCodeBlockContent()
-            } else {
-                tokens += processNormalText()
-            }
+        while processedCount < buffer.count {
+            let remaining = buffer.dropFirst(processedCount)
             
-            // Stop if waiting for more chunks to complete a block
-            if isInCodeBlock && !buffer.contains("```") {
-                break
+            if isInCodeBlock {
+                if let endRange = findCodeBlockEnd(in: remaining) {
+                    let content = String(remaining[..<endRange.lowerBound])
+                    if !content.isEmpty {
+                        tokens.append(.codeBlockContent(content))
+                    }
+                    tokens.append(.codeBlockEnd)
+                    processedCount += remaining.distance(from: remaining.startIndex, to: endRange.upperBound)
+                    isInCodeBlock = false
+                    currentLanguage = nil
+                } else {
+                    break
+                }
+            } else {
+                if let (startRange, language) = findCodeBlockStart(in: remaining) {
+                    let beforeText = String(remaining[..<startRange.lowerBound])
+                    if !beforeText.isEmpty {
+                        tokens += tokenizeNormalText(beforeText)
+                    }
+                    
+                    currentLanguage = language
+                    tokens.append(.codeBlockStart(language: currentLanguage))
+                    isInCodeBlock = true
+                    processedCount += remaining.distance(from: remaining.startIndex, to: startRange.upperBound)
+                } else {
+                    break
+                }
             }
         }
         
-        return tokens
+        if processedCount > 0 {
+            buffer.removeFirst(processedCount)
+        }
+        return (tokens, buffer)
     }
     
-    func flush() -> [TokenType] {
+    private func findCodeBlockStart(in text: Substring) -> (Range<String.Index>, String?)? {
+        guard let startRange = text.range(of: "```") else { return nil }
+        
+        let afterTicks = text[startRange.upperBound...]
+        guard let newlineRange = afterTicks.firstIndex(of: "\n") else { return nil }
+        
+        let languagePart = text[startRange.upperBound..<newlineRange]
+        let language = String(languagePart)
+            .trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "`")))
+        
+        return (startRange.lowerBound..<newlineRange, language.isEmpty ? nil : language)
+    }
+    
+    private func findCodeBlockEnd(in text: Substring) -> Range<String.Index>? {
+        return text.range(of: "```")
+    }
+    
+    func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        buffer = ""
+        isInCodeBlock = false
+        currentLanguage = nil
+    }
+    
+    func flush() -> [TextStreamTokenizer.TokenType] {
         lock.lock()
         defer { lock.unlock() }
         
-        var tokens: [TokenType] = []
+        var tokens: [TextStreamTokenizer.TokenType] = []
         if !buffer.isEmpty {
             if isInCodeBlock {
                 tokens.append(.codeBlockContent(buffer))
-                // Note: No .codeBlockEnd for incomplete blocks
             } else {
                 tokens += tokenizeNormalText(buffer)
             }
@@ -59,140 +109,92 @@ final class CodeBlockAccumulator {
         return tokens
     }
     
-    // MARK: - Private Processing
-    private func processCodeBlockContent() -> [TokenType] {
-        var tokens: [TokenType] = []
-        
-        guard let endRange = buffer.range(of: "```") else {
-            // No closing backticks found yet
-            return tokens
-        }
-        
-        // Extract content before end markers
-        let content = String(buffer[..<endRange.lowerBound])
-        if !content.isEmpty {
-            tokens.append(.codeBlockContent(content))
-        }
-        tokens.append(.codeBlockEnd)
-        
-        // Remove processed portion
-        buffer = String(buffer[endRange.upperBound...])
-        isInCodeBlock = false
-        currentLanguage = nil
-        
-        return tokens
-    }
-    
-    private func processNormalText() -> [TokenType] {
-        var tokens: [TokenType] = []
-        
-        guard let match = Self.codeBlockRegex.firstMatch(
-            in: buffer,
-            range: NSRange(buffer.startIndex..., in: buffer)
-        ) else {
-            // No code blocks found, tokenize safe portions
-            if let safeText = extractSafeNormalText() {
-                tokens += tokenizeNormalText(safeText)
-            }
-            return tokens
-        }
-        
-        // Handle text before code block
-        let beforeRange = Range(match.range, in: buffer)!
-        let beforeText = String(buffer[..<beforeRange.lowerBound])
-        if !beforeText.isEmpty {
-            tokens += tokenizeNormalText(beforeText)
-        }
-        
-        // Process code block start
-        let ticksRange = Range(match.range(withName: "ticks"), in: buffer)!
-        let languageRange = Range(match.range(withName: "language"), in: buffer)
-        let language = languageRange.map { String(buffer[$0]) }?.trimmingCharacters(in: .whitespaces)
-        
-        // Update state
-        currentLanguage = language?.isEmpty ?? true ? nil : language
-        let afterTicks = buffer[ticksRange.upperBound...]
-        
-        if let firstNewline = afterTicks.firstIndex(of: "\n") {
-            // Complete code block start
-            buffer = String(afterTicks[firstNewline...])
-            tokens.append(.codeBlockStart(language: currentLanguage))
-            isInCodeBlock = true
-        } else {
-            // Partial block start - wait for more chunks
-            pendingBackticks = String(buffer[ticksRange])
-            buffer = String(afterTicks)
-        }
-        
-        return tokens
-    }
-    
-    private func extractSafeNormalText() -> String? {
-        guard !buffer.isEmpty else { return nil }
-        
-        // Don't tokenize if we might have partial backticks
-        guard !buffer.contains("`") else { return nil }
-        
-        let safeText = buffer
-        buffer = ""
-        return safeText
-    }
-    
-    // MARK: - Tokenization
-    private func tokenizeNormalText(_ text: String) -> [TokenType] {
-        var tokens: [TokenType] = []
+    private func tokenizeNormalText(_ text: String) -> [TextStreamTokenizer.TokenType] {
+        var tokens: [TextStreamTokenizer.TokenType] = []
         let tokenizer = NLTokenizer(unit: .word)
         tokenizer.string = text
         
+        var lastIndex = text.startIndex
         tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            if lastIndex < range.lowerBound {
+                let whitespace = String(text[lastIndex..<range.lowerBound])
+                tokens.append(TextStreamTokenizer.TokenType.classify(whitespace))
+            }
+            
             let token = String(text[range])
-            tokens.append(classifyToken(token))
+            tokens.append(TextStreamTokenizer.TokenType.classify(token))
+            lastIndex = range.upperBound
             return true
+        }
+        
+        if lastIndex < text.endIndex {
+            let whitespace = String(text[lastIndex..<text.endIndex])
+            tokens.append(TextStreamTokenizer.TokenType.classify(whitespace))
         }
         
         return tokens
     }
-    
-    private func classifyToken(_ token: String) -> TokenType {
-        // Your existing token classification logic
-        if token.isWhitespace {
-            return token.contains("\n") ? .newline : .whitespace(token)
-        } else if token.isPunctuation {
-            return .punctuation(token)
+}
+
+extension TextStreamTokenizer.TokenType {
+    static func classify(_ text: String) -> Self {
+        guard !text.isEmpty else { return .whitespace(text) }
+        
+        if text.isNewline {
+            return .newline
+        } else if text.isWhitespace {
+            return .whitespace(text)
+        } else if text.isPunctuation {
+            return .punctuation(text)
+        } else if text.isInlineCode {
+            return .inlineCode(text.trimmingCharacters(in: ["`"]))
+        } else if text.isURL {
+            return .link(text: text, url: URL(string: text))
+        } else if let (numberToken, wordToken) = splitNumberPunctuationToken(text) {
+            return numberToken
         } else {
-            return .word(token)
+            return .word(text)
         }
     }
     
-    // MARK: - Reset
-    private func reset() {
-        buffer = ""
-        isInCodeBlock = false
-        currentLanguage = nil
-        pendingBackticks = ""
+    private static func splitNumberPunctuationToken(_ text: String) -> (Self, Self)? {
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = StreamAccumulator.numberPunctuationRegex.firstMatch(in: text, range: range),
+              match.numberOfRanges >= 3,
+              let numberRange = Range(match.range(at: 1), in: text),
+              let punctuationRange = Range(match.range(at: 2), in: text) else {
+            return nil
+        }
+        
+        let number = String(text[numberRange])
+        let punctuation = String(text[punctuationRange])
+        let remaining = match.numberOfRanges > 2 ? 
+            String(text[Range(match.range(at: 3), in: text)!]) : ""
+        
+        return (.special(number + punctuation), remaining.isEmpty ? .whitespace(" ") : .word(remaining))
     }
 }
 
-// MARK: - Token Types
-enum TokenType {
-    case word(String)
-    case punctuation(String)
-    case whitespace(String)
-    case newline
-    case codeBlockStart(language: String?)
-    case codeBlockContent(String)
-    case codeBlockEnd
-}
-
-// MARK: - String Extensions
-private extension String {
+extension String {
+    var isNewline: Bool {
+        self == "\n" || self == "\r\n"
+    }
+    
     var isWhitespace: Bool {
-        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !isEmpty && trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     
     var isPunctuation: Bool {
-        !isEmpty && unicodeScalars.allSatisfy {
-            CharacterSet.punctuationCharacters.contains($0)
-        }
+        guard count == 1, let scalar = unicodeScalars.first else { return false }
+        return CharacterSet.punctuationCharacters.contains(scalar)
+    }
+    
+    var isInlineCode: Bool {
+        count >= 2 && hasPrefix("`") && hasSuffix("`")
+    }
+    
+    var isURL: Bool {
+        let range = NSRange(startIndex..., in: self)
+        return StreamAccumulator.urlRegex.firstMatch(in: self, range: range) != nil
     }
 }

@@ -13,17 +13,22 @@ enum StreamRenderer {
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: NSColor.textColor
         ]
-        private let accumulator = StreamAccumulator()
         private let tokenQueue = DispatchQueue(label: "com.streamrenderer.tokenqueue", qos: .userInitiated)
-
+        
+        private let accumulator = StreamAccumulator()
         private let tokenizer = TextStreamTokenizer()
+
         private var pendingTokens: [(token: TextStreamTokenizer.TokenType, attributedString: NSAttributedString)] = []
+
+        // Code block state management
+        private var codeBlockDepth = 0
+        private var currentCodeLanguage: String?
+        private var isInCodeBlock: Bool { codeBlockDepth > 0 }
 
         private let minFrameInterval: CFTimeInterval = 1/60 // 60fps cap
         private var lastRenderTime: CFTimeInterval = 0
         private let maxPendingTokens = 1000
 
-        private var isInCodeBlock = false
         private var codeBlockAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor.textColor,
@@ -71,17 +76,24 @@ enum StreamRenderer {
                 codeAttributes[.backgroundColor] = NSColor.controlBackgroundColor.withAlphaComponent(0.3)
                 return (token, NSAttributedString(string: text, attributes: codeAttributes))
                 
-            case .codeBlockStart:
-                isInCodeBlock = true
-                return (token, NSAttributedString(string: "\n```\n", attributes: codeBlockAttributes))
+            case .codeBlockStart(let language):
+                codeBlockDepth += 1
+                currentCodeLanguage = language
+                let delimiter = codeBlockDepth == 1 ? "\n```\(language ?? "")\n" : "```\n"
+                return (token, NSAttributedString(string: delimiter, attributes: codeBlockAttributes))
                 
             case .codeBlockEnd:
-                isInCodeBlock = false
-                return (token, NSAttributedString(string: "```\n", attributes: codeBlockAttributes))
+                codeBlockDepth = max(0, codeBlockDepth - 1)
+                let delimiter = "```\n"
+                let result = (token, NSAttributedString(string: delimiter, attributes: codeBlockAttributes))
+                if codeBlockDepth == 0 {
+                    currentCodeLanguage = nil
+                }
+                return result
                 
             case .codeBlockContent(let text):
                 return (token, NSAttributedString(string: text, attributes: codeBlockAttributes))
-                
+
             case .link(let text, let url):
                 var linkAttributes = attributes
                 linkAttributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
@@ -93,48 +105,37 @@ enum StreamRenderer {
             }
         }
 
-        func appendStreamingText(_ newChunk: String, 
-            attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 14),
-                .foregroundColor: NSColor.textColor]) 
-        {
-            currentAttributes = attributes
+        func appendStreamingText(_ newChunk: String, isComplete: Bool = false) {
             tokenQueue.async { [weak self] in
                 guard let self = self else { return }
-                print("chunk\(newChunk)")
+                print("\(newChunk)")
 
-                let readyChunks = self.accumulator.process(chunk: newChunk)
-                for chunk in readyChunks {
-                    print("Processing meaningful chunk: \(chunk.prefix(100))...")
-
-                    let tokens = tokenizer.tokenize(newChunk)
-                    let attributedTokens = tokens.map { 
-                        self.createAttributedString(for: $0)
-                    }
-
-                    os_unfair_lock_lock(&updateLock)
-                    // Check if we're approaching the limit
-                    if pendingTokens.count + attributedTokens.count > maxPendingTokens {
-                        // Option 1: Drop oldest tokens to make space
-                        let overflow = (pendingTokens.count + attributedTokens.count) - maxPendingTokens
-                        if overflow < pendingTokens.count {
-                            pendingTokens.removeFirst(overflow)
-                        } else {
-                            pendingTokens.removeAll()
-                        }
-                        
-                        // Option 2: Alternatively, you could choose to ignore the new tokens
-                        // when the buffer is full by returning early here
-                    }
-
-                    self.pendingTokens += attributedTokens
-                    os_unfair_lock_unlock(&updateLock)
-                    
-                    DispatchQueue.main.async {
-                        self.startIfNeeded()
+                let (tokens, _) = self.accumulator.process(chunk: newChunk)
+                
+                let attributedTokens = tokens.map { self.createAttributedString(for: $0) }
+                
+                os_unfair_lock_lock(&self.updateLock)
+                self.pendingTokens += attributedTokens
+                if isComplete {
+                    let remaining = self.accumulator.flush()
+                    if !remaining.isEmpty {
+                        // let finalTokens = self.tokenizer.tokenize(remaining)
+                        self.pendingTokens += remaining.map { self.createAttributedString(for: $0) }
                     }
                 }
+                os_unfair_lock_unlock(&self.updateLock)
+                
+                DispatchQueue.main.async {
+                    self.startIfNeeded()
+                }
             }
+
+             // When stream ends (you'll need to detect this)
+            // let remaining = self.accumulator.flush()
+            // if !remaining.isEmpty {
+            //     let tokens = self.tokenizer.tokenize(remaining)
+            //     // ... process final chunk ...
+            // }
         }
 
         private func processPendingUpdates() {
@@ -143,55 +144,49 @@ enum StreamRenderer {
             guard currentTime - lastRenderTime >= minFrameInterval else { return }
 
             var batch: [(token: TextStreamTokenizer.TokenType, attributedString: NSAttributedString)] = []
-
+            var shouldStop = false
+            
             os_unfair_lock_lock(&updateLock)
-                let dynamicBatchSize = min(5, max(1, pendingTokens.count / 20 + 1))
-                let batchSize = min(dynamicBatchSize, pendingTokens.count)
-                if batchSize > 0 {
-                    batch = Array(pendingTokens.prefix(batchSize))
-                    pendingTokens.removeFirst(batchSize)
-                    // print("Processing batch of \(batchSize) tokens:")
-                }
-                let shouldStop = pendingTokens.isEmpty
+            let dynamicBatchSize = min(50, max(5, pendingTokens.count / 10 + 1))
+            if dynamicBatchSize > 0 && pendingTokens.count > 0 {
+                batch = Array(pendingTokens.prefix(dynamicBatchSize))
+                pendingTokens.removeFirst(batch.count)
+                shouldStop = pendingTokens.isEmpty
+            }
             os_unfair_lock_unlock(&updateLock)
 
             guard !batch.isEmpty else {
-                stop()
+                if shouldStop { stop() }
                 return
             }
 
+            let combined = NSMutableAttributedString()
             for (token, attributedString) in batch {
                 if case .newline = token {
-                    self.textBlock.appendNewline()
+                    combined.append(NSAttributedString(string: "\n"))
                 } else {
-                    self.textBlock.appendText(attributedString)
+                    combined.append(attributedString)
                 }
             }
-            self.lastRenderTime = currentTime
-
-            // If we still have a large backlog, schedule immediately
-            os_unfair_lock_lock(&updateLock)
-            let hasLargeBacklog = pendingTokens.count > maxPendingTokens / 2
-            os_unfair_lock_unlock(&updateLock)
             
-            if hasLargeBacklog {
+            textBlock.appendText(combined)
+            lastRenderTime = currentTime
+
+            if shouldStop {
+                stop()
+            } else {
                 DispatchQueue.main.async {
                     self.processPendingUpdates()
                 }
-            } else if shouldStop {
-                stop()
             }
         }
 
         private func startIfNeeded() {
             guard !isAnimating else { return }
-            stop()
-
             isAnimating = true
             displayLink = DisplayLink { [weak self] in
                 self?.processPendingUpdates()
             }
-            
             displayLink?.start()
         }
 
@@ -201,6 +196,21 @@ enum StreamRenderer {
             displayLink?.stop()
             displayLink = nil
         }
+        
+        func clear() {
+            os_unfair_lock_lock(&updateLock)
+                pendingTokens.removeAll()
+                accumulator.reset()
+                tokenizer.reset()
+                codeBlockDepth = 0
+                currentCodeLanguage = nil
+            os_unfair_lock_unlock(&updateLock)
+            
+            DispatchQueue.main.async {
+                self.textBlock.textView.string = ""
+                self.textBlock.updateHeight()
+            }
+        }
 
         deinit {
             stop()
@@ -208,7 +218,7 @@ enum StreamRenderer {
     }
 
     class TextBlock: NSView {
-        private var textView: NSTextView
+        private(set) var textView: NSTextView
         private var heightConstraint: NSLayoutConstraint?
         private let maxWidth: CGFloat
     
@@ -253,21 +263,10 @@ enum StreamRenderer {
         }
 
         func appendText(_ attributedString: NSAttributedString) {
-            // print("attributedString -> \(attributedString)")
-            dispatchPrecondition(condition: .onQueue(.main))
-            // Check if this is a code block delimiter to add visual separation
-            if attributedString.string == "```\n" || attributedString.string == "\n```\n" {
-                let separator = NSAttributedString(string: "\n", attributes: [
-                    .font: NSFont.systemFont(ofSize: 4)
-                ])
-                textView.textStorage?.append(separator)
-            }
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.1
-                context.allowsImplicitAnimation = true
-                textView.textStorage?.append(attributedString)
-                updateHeight()
-            })
+            textView.textStorage?.beginEditing()
+            textView.textStorage?.append(attributedString)
+            textView.textStorage?.endEditing()
+            updateHeight()
         }
 
         func appendNewline() {
@@ -336,6 +335,8 @@ enum StreamRenderer {
 
         bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8).isActive = true
         bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40).isActive = true
+         
+        
 
         return (container, controller)
     }
@@ -346,4 +347,3 @@ enum StreamRenderer {
         return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
     }
 }
-

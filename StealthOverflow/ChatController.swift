@@ -37,9 +37,9 @@ class ChatController {
         let indicator = TypingIndicatorView()
         messagesStack.addArrangedSubview(indicator)
         typingIndicator = indicator
-        assistantResponseBuffer = NSMutableAttributedString()
-        isInCodeBlock = false
-        codeBlockBuffer = ""
+
+        // assistantResponseBuffer = NSMutableAttributedString()
+        currentStreamingTextController?.clear()
         currentStreamingTextController = nil
 
         chatApiService.fetchGPTResponse(for: prompt) { [weak self] chunk in
@@ -47,94 +47,34 @@ class ChatController {
                 guard let self = self else { return }
 
                 if chunk == "[STREAM_DONE]" {
-                    self.typingIndicator?.removeFromSuperview()
-                    self.typingIndicator?.stopAnimating()
-                    self.typingIndicator = nil
-
-                //  if self.isInCodeBlock && !self.codeBlockBuffer.isEmpty {
-                //      self.assistantResponseBuffer.append(NSAttributedString(string: "```\n" + self.codeBlockBuffer + "\n```"))
-                //      self.codeBlockBuffer = ""
-                //      self.isInCodeBlock = false
-                //  }
-
-                //  let finalText = self.assistantResponseBuffer.string.trimmingCharacters(in: .whitespacesAndNewlines)
-                //  if !finalText.isEmpty {
-                //      let (finalBubble, _) = MessageRenderer.renderMessage(finalText, isUser: false)
-                //      self.messagesStack?.addArrangedSubview(finalBubble)
-                //  }
-
-                //  self.currentStreamingTextController?.view.removeFromSuperview()
-                //  self.currentStreamingTextController = nil
-                    // return
+                    // self.finalizeStream()
                 }
 
-                // Step 2: Ignore empty chunks
-                let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmedChunk.isEmpty else { return }
-
-                // Step 3: Process chunk
-                let processedChunk = self.processStreamChunk(chunk)
-
-                // Step 4: Lazy create streaming bubble
-                if self.currentStreamingTextController == nil {
-                    self.typingIndicator?.removeFromSuperview()
-                    self.typingIndicator?.stopAnimating()
-                    self.typingIndicator = nil
-
-                    let (bubble, controller) = StreamRenderer.renderStreamingMessage()
-                    self.messagesStack?.addArrangedSubview(bubble)
-                    self.currentStreamingTextController = controller
-                }
-
-                // Step 5: Append text to the live bubble
-                self.currentStreamingTextController?.appendStreamingText(processedChunk)
+                self.processStreamChunk(chunk)
             }
         }
     }
 
-    private func processStreamChunk(_ chunk: String) -> String {  // Explicit String return
-        var result = ""
-        
-        if isInCodeBlock {
-            if let closingRange = chunk.range(of: "```") {
-                let codeContent = chunk[..<closingRange.lowerBound]
-                codeBlockBuffer += codeContent
-                assistantResponseBuffer.append(NSAttributedString(string: "```\n" + codeBlockBuffer + "\n```"))
-                result += "```\n" + codeBlockBuffer + "\n```"
-                codeBlockBuffer = ""
-                isInCodeBlock = false
-
-                let remaining = chunk[closingRange.upperBound...]
-                if !remaining.isEmpty {
-                    assistantResponseBuffer.append(NSAttributedString(string: String(remaining)))
-                    result += String(remaining)
-                }
-            } else {
-                codeBlockBuffer += chunk
-            }
-        } else {
-            if let openingRange = chunk.range(of: "```") {
-                let before = chunk[..<openingRange.lowerBound]
-                if !before.isEmpty {
-                    assistantResponseBuffer.append(NSAttributedString(string: String(before)))
-                    result += String(before)
-                }
-
-            isInCodeBlock = true
-            codeBlockBuffer = ""
-
-            let after = chunk[openingRange.upperBound...]
-            if !after.isEmpty {
-                result += processStreamChunk(String(after)) // recursive for nested
-            }
-        } else {
-            assistantResponseBuffer.append(NSAttributedString(string: chunk))
-            result += chunk
-        }
+     private func initializeStreamingController() {
+        let (bubble, controller) = StreamRenderer.renderStreamingMessage()
+        messagesStack?.addArrangedSubview(bubble)
+        currentStreamingTextController = controller
+        typingIndicator?.removeFromSuperview()
+        typingIndicator = nil
     }
-    
-    return result
-}
+    private func finalizeStream() {
+        typingIndicator?.removeFromSuperview()
+        typingIndicator = nil
+        currentStreamingTextController?.appendStreamingText("", isComplete: true)
+    }
+
+    private func processStreamChunk(_ chunk: String) {  // Explicit String return
+        // print("\(chunk)")
+        if currentStreamingTextController == nil {
+            initializeStreamingController()
+        }
+        currentStreamingTextController?.appendStreamingText(chunk)
+    }
 
     private func addMessage(_ message: String, isUser: Bool) {
         guard let messagesStack = messagesStack else { return }
