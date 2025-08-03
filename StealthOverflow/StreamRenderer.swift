@@ -1,222 +1,222 @@
 import Cocoa
 
-// MARK: - STREAMRENDERER.swift
+// MARK: - StreamRenderer
+// MARK: - StreamRenderer
 enum StreamRenderer {
-    // MARK: - STREAMMESSAGECONTROLLER.swift
-    final class StreamMessageController{
+    final class StreamMessageController {
         let textBlock: TextBlock
-
-        private var updateLock = os_unfair_lock()
+        // Unified synchronization
+        private let stateLock = NSRecursiveLock()
+        private let processingQueue = DispatchQueue(label: "stream.processor", qos: .userInteractive)
         private var displayLink: DisplayLink?
-        private var isAnimating = false
-        private var currentAttributes: [NSAttributedString.Key: Any] = [
+        
+        // Protected state
+        private var _isAnimating = false
+        private var _fullTextBuffer = NSMutableAttributedString()
+        private var _isInCodeBlock = false
+        private var _codeBlockBuffer = ""
+        private var _lastRenderTime: CFTimeInterval = 0
+        
+        // Constants
+        private let minFrameInterval: CFTimeInterval = 1/60
+        
+        private let regularAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14),
             .foregroundColor: NSColor.textColor
         ]
-        private let tokenQueue = DispatchQueue(label: "com.streamrenderer.tokenqueue", qos: .userInitiated)
+
+        // Thread-safe property access
+        private var isAnimating: Bool {
+            get { stateLock.withLock { _isAnimating } }
+            set { stateLock.withLock { _isAnimating = newValue } }
+        }
         
-        private let accumulator = StreamAccumulator()
-        private let tokenizer = TextStreamTokenizer()
-
-        private var pendingTokens: [(token: TextStreamTokenizer.TokenType, attributedString: NSAttributedString)] = []
-
-        // Code block state management
-        private var codeBlockDepth = 0
-        private var currentCodeLanguage: String?
-        private var isInCodeBlock: Bool { codeBlockDepth > 0 }
-
-        private let minFrameInterval: CFTimeInterval = 1/60 // 60fps cap
-        private var lastRenderTime: CFTimeInterval = 0
-        private let maxPendingTokens = 1000
-
-        private var codeBlockAttributes: [NSAttributedString.Key: Any] = [
+        private var isInCodeBlock: Bool {
+            get { stateLock.withLock { _isInCodeBlock } }
+            set { stateLock.withLock { _isInCodeBlock = newValue } }
+        }
+        
+        private var codeBlockBuffer: String {
+            get { stateLock.withLock { _codeBlockBuffer } }
+            set { stateLock.withLock { _codeBlockBuffer = newValue } }
+        }
+        
+        private let codeBlockAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor.textColor,
             .backgroundColor: NSColor.controlBackgroundColor
+        ]
+        
+        private let inlineCodeAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+            .backgroundColor: NSColor.controlBackgroundColor.withAlphaComponent(0.3)
         ]
 
         init(textBlock: TextBlock) {
             self.textBlock = textBlock
         }
-
-        private func createAttributedString(for token: TextStreamTokenizer.TokenType) -> (TextStreamTokenizer.TokenType, NSAttributedString) {
-            let attributes = isInCodeBlock ? codeBlockAttributes : currentAttributes
+        
+        func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
+            // Capture strong reference to textBlock
+            let textBlock = self.textBlock
             
-            switch token {
-            case .word(let text), .punctuation(let text), 
-                .whitespace(let text), .special(let text):
-                return (token, NSAttributedString(string: text, attributes: attributes))
+            processingQueue.async { [weak self] in
+                guard let self = self else { return }
                 
-            case .newline:
-                return (token, NSAttributedString(string: "\n", attributes: attributes))
+                let cleanedChunk = chunk.cleanedForStream()
+                guard !cleanedChunk.isEmpty || isComplete else { return }
                 
-            case .bold(let text):
-                var boldAttributes = attributes
-                boldAttributes[.font] = NSFont.boldSystemFont(ofSize: (attributes[.font] as? NSFont)?.pointSize ?? 14)
-                return (token, NSAttributedString(string: text, attributes: boldAttributes))
+                let update = self.processChunk(cleanedChunk, isComplete: isComplete)
                 
-            case .italic(let text):
-                var italicAttributes = attributes
-                if let currentFont = attributes[.font] as? NSFont {
-                    italicAttributes[.font] = NSFontManager.shared.convert(
-                        currentFont,
-                        toHaveTrait: .italicFontMask
-                    )
-                } else {
-                    italicAttributes[.font] = NSFontManager.shared.convert(
-                        NSFont.systemFont(ofSize: 14),
-                        toHaveTrait: .italicFontMask
-                    )
+                // Ensure UI updates on main thread
+                DispatchQueue.main.async {
+                    // Verify textBlock still exists
+                    guard textBlock.superview != nil else { return }
+                    
+                    self.commitUpdate(update, isComplete: isComplete)
                 }
-                return (token, NSAttributedString(string: text, attributes: italicAttributes))
-                
-            case .inlineCode(let text):
-                var codeAttributes = attributes
-                codeAttributes[.font] = NSFont.monospacedSystemFont(ofSize: (attributes[.font] as? NSFont)?.pointSize ?? 12, weight: .regular)
-                codeAttributes[.backgroundColor] = NSColor.controlBackgroundColor.withAlphaComponent(0.3)
-                return (token, NSAttributedString(string: text, attributes: codeAttributes))
-                
-            case .codeBlockStart(let language):
-                codeBlockDepth += 1
-                currentCodeLanguage = language
-                let delimiter = codeBlockDepth == 1 ? "\n```\(language ?? "")\n" : "```\n"
-                return (token, NSAttributedString(string: delimiter, attributes: codeBlockAttributes))
-                
-            case .codeBlockEnd:
-                codeBlockDepth = max(0, codeBlockDepth - 1)
-                let delimiter = "```\n"
-                let result = (token, NSAttributedString(string: delimiter, attributes: codeBlockAttributes))
-                if codeBlockDepth == 0 {
-                    currentCodeLanguage = nil
-                }
-                return result
-                
-            case .codeBlockContent(let text):
-                return (token, NSAttributedString(string: text, attributes: codeBlockAttributes))
-
-            case .link(let text, let url):
-                var linkAttributes = attributes
-                linkAttributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
-                linkAttributes[.foregroundColor] = NSColor.linkColor
-                if let url = url {
-                    linkAttributes[.link] = url
-                }
-                return (token, NSAttributedString(string: text, attributes: linkAttributes))
             }
         }
-
-        func appendStreamingText(_ newChunk: String, isComplete: Bool = false) {
-            tokenQueue.async { [weak self] in
-                guard let self = self else { return }
-                print("\(newChunk)")
-
-                let (tokens, _) = self.accumulator.process(chunk: newChunk)
+        
+        private func processChunk(_ chunk: String, isComplete: Bool) -> NSMutableAttributedString {
+            return stateLock.withLock {
+                let update = NSMutableAttributedString()
+                var remainingChunk = chunk
                 
-                let attributedTokens = tokens.map { self.createAttributedString(for: $0) }
-                
-                os_unfair_lock_lock(&self.updateLock)
-                self.pendingTokens += attributedTokens
-                if isComplete {
-                    let remaining = self.accumulator.flush()
-                    if !remaining.isEmpty {
-                        // let finalTokens = self.tokenizer.tokenize(remaining)
-                        self.pendingTokens += remaining.map { self.createAttributedString(for: $0) }
+                if _isInCodeBlock {
+                    if let closingRange = remainingChunk.range(of: "```") {
+                        let codeContent = String(remainingChunk[..<closingRange.lowerBound])
+                        _codeBlockBuffer += codeContent
+                        
+                        update.append(createCodeBlockDelimiter())
+                        update.append(createCodeBlockContent(_codeBlockBuffer))
+                        update.append(createCodeBlockDelimiter())
+                        
+                        _codeBlockBuffer = ""
+                        _isInCodeBlock = false
+                        remainingChunk = String(remainingChunk[closingRange.upperBound...])
+                    } else {
+                        _codeBlockBuffer += remainingChunk
+                        return NSMutableAttributedString()
                     }
                 }
-                os_unfair_lock_unlock(&self.updateLock)
                 
-                DispatchQueue.main.async {
-                    self.startIfNeeded()
+                if !remainingChunk.isEmpty && !_isInCodeBlock {
+                    if let openingRange = remainingChunk.range(of: "```") {
+                        let textBefore = String(remainingChunk[..<openingRange.lowerBound])
+                        if !textBefore.isEmpty {
+                            update.append(processInlineText(textBefore))
+                        }
+                        
+                        _isInCodeBlock = true
+                        update.append(createCodeBlockDelimiter())
+                        
+                        let afterTicks = remainingChunk.index(openingRange.lowerBound, offsetBy: 3)
+                        remainingChunk = String(remainingChunk[afterTicks...])
+                        _codeBlockBuffer = remainingChunk
+                        remainingChunk = ""
+                    }
+                    
+                    if !remainingChunk.isEmpty {
+                        update.append(processInlineText(remainingChunk))
+                    }
                 }
+                
+                if isComplete && _isInCodeBlock {
+                    update.append(createCodeBlockDelimiter())
+                    update.append(createCodeBlockContent(_codeBlockBuffer))
+                    update.append(createCodeBlockDelimiter())
+                    _codeBlockBuffer = ""
+                    _isInCodeBlock = false
+                }
+                
+                return update
             }
-
-             // When stream ends (you'll need to detect this)
-            // let remaining = self.accumulator.flush()
-            // if !remaining.isEmpty {
-            //     let tokens = self.tokenizer.tokenize(remaining)
-            //     // ... process final chunk ...
-            // }
         }
-
+        
+        private func commitUpdate(_ update: NSMutableAttributedString, isComplete: Bool) {
+               stateLock.withLock {
+                   _fullTextBuffer.append(update)
+                   let bufferCopy = _fullTextBuffer.copy() as! NSAttributedString
+                   
+                   // Directly update text block on current thread (must be main)
+                   textBlock.updateFullText(bufferCopy)
+                   
+                   if isComplete {
+                       self.stop()
+                   } else {
+                       self.startDisplayLinkIfNeeded()
+                   }
+               }
+           }
+        
+        private func startDisplayLinkIfNeeded() {
+            stateLock.withLock {
+                guard !_isAnimating else { return }
+                _isAnimating = true
+                
+                displayLink = DisplayLink { [weak self] in
+                    self?.processPendingUpdates()
+                }
+                displayLink?.start()
+            }
+        }
+        
         private func processPendingUpdates() {
-            dispatchPrecondition(condition: .onQueue(.main))
-            let currentTime = CACurrentMediaTime()
-            guard currentTime - lastRenderTime >= minFrameInterval else { return }
-
-            var batch: [(token: TextStreamTokenizer.TokenType, attributedString: NSAttributedString)] = []
-            var shouldStop = false
-            
-            os_unfair_lock_lock(&updateLock)
-            let dynamicBatchSize = min(50, max(5, pendingTokens.count / 10 + 1))
-            if dynamicBatchSize > 0 && pendingTokens.count > 0 {
-                batch = Array(pendingTokens.prefix(dynamicBatchSize))
-                pendingTokens.removeFirst(batch.count)
-                shouldStop = pendingTokens.isEmpty
-            }
-            os_unfair_lock_unlock(&updateLock)
-
-            guard !batch.isEmpty else {
-                if shouldStop { stop() }
-                return
-            }
-
-            let combined = NSMutableAttributedString()
-            for (token, attributedString) in batch {
-                if case .newline = token {
-                    combined.append(NSAttributedString(string: "\n"))
-                } else {
-                    combined.append(attributedString)
-                }
-            }
-            
-            textBlock.appendText(combined)
-            lastRenderTime = currentTime
-
-            if shouldStop {
-                stop()
-            } else {
-                DispatchQueue.main.async {
-                    self.processPendingUpdates()
-                }
-            }
+            // Animation processing logic
         }
-
-        private func startIfNeeded() {
-            guard !isAnimating else { return }
-            isAnimating = true
-            displayLink = DisplayLink { [weak self] in
-                self?.processPendingUpdates()
-            }
-            displayLink?.start()
-        }
-
+        
         private func stop() {
-            guard isAnimating else { return }
-            isAnimating = false
-            displayLink?.stop()
-            displayLink = nil
+            stateLock.withLock {
+                _isAnimating = false
+                displayLink?.stop()
+                displayLink = nil
+            }
         }
         
         func clear() {
-            os_unfair_lock_lock(&updateLock)
-                pendingTokens.removeAll()
-                accumulator.reset()
-                tokenizer.reset()
-                codeBlockDepth = 0
-                currentCodeLanguage = nil
-            os_unfair_lock_unlock(&updateLock)
-            
-            DispatchQueue.main.async {
-                self.textBlock.textView.string = ""
-                self.textBlock.updateHeight()
+            stateLock.withLock {
+                _fullTextBuffer = NSMutableAttributedString()
+                _isInCodeBlock = false
+                _codeBlockBuffer = ""
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.textBlock.textView.string = ""
+                    self?.textBlock.updateHeight()
+                }
             }
         }
-
-        deinit {
-            stop()
+        
+        // Helper methods
+        private func createRegularText(_ text: String) -> NSMutableAttributedString {
+            return NSMutableAttributedString(string: text, attributes: regularAttributes)
+        }
+        
+        private func createCodeBlockContent(_ text: String) -> NSMutableAttributedString {
+            return NSMutableAttributedString(string: text, attributes: codeBlockAttributes)
+        }
+        
+        private func createCodeBlockDelimiter() -> NSMutableAttributedString {
+            return NSMutableAttributedString(string: "```\n", attributes: codeBlockAttributes)
+        }
+        
+        private func processInlineText(_ text: String) -> NSMutableAttributedString {
+            let result = NSMutableAttributedString()
+            let parts = text.components(separatedBy: "`")
+            
+            for (index, part) in parts.enumerated() {
+                if index % 2 == 0 {
+                    result.append(createRegularText(part))
+                } else {
+                    result.append(NSMutableAttributedString(string: part, attributes: inlineCodeAttributes))
+                }
+            }
+            
+            return result
         }
     }
 
+    // MARK: - TextBlock
     class TextBlock: NSView {
         private(set) var textView: NSTextView
         private var heightConstraint: NSLayoutConstraint?
@@ -262,15 +262,14 @@ enum StreamRenderer {
             ])
         }
 
-        func appendText(_ attributedString: NSAttributedString) {
-            textView.textStorage?.beginEditing()
-            textView.textStorage?.append(attributedString)
-            textView.textStorage?.endEditing()
+        func updateFullText(_ text: NSAttributedString) {
+            assert(Thread.isMainThread, "Text updates must be on main thread")
+            guard let storage = textView.textStorage else { return }
+            
+            storage.beginEditing()
+            storage.setAttributedString(text)
+            storage.endEditing()
             updateHeight()
-        }
-
-        func appendNewline() {
-            appendText(NSAttributedString(string: "\n"))
         }
 
         func updateHeight() {
@@ -292,6 +291,7 @@ enum StreamRenderer {
         }
     }
 
+    // MARK: - Public Interface
     static func renderStreamingMessage() -> (NSView, StreamMessageController) {
         let maxWidth = calculateMaxWidth()
 
@@ -315,13 +315,11 @@ enum StreamRenderer {
 
         bubble.addSubview(stack)
 
-        // Text block here
         let textblock = TextBlock(maxWidth: maxWidth)
         stack.addArrangedSubview(textblock)
 
         let controller = StreamMessageController(textBlock: textblock)
 
-        // Setup constraints
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
             stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
@@ -331,19 +329,39 @@ enum StreamRenderer {
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
             bubble.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
+            
+            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40)
         ])
-
-        bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8).isActive = true
-        bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40).isActive = true
-         
-        
 
         return (container, controller)
     }
 
-    // MARK: - Private Helpers
     private static func calculateMaxWidth() -> CGFloat {
         let screenWidth = NSScreen.main?.visibleFrame.width ?? 800
         return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
+    }
+}
+
+extension String {
+    func cleanedForStream() -> String {
+        var cleaned = replacingOccurrences(of: "\0", with: "")
+        cleaned = cleaned.filter { char in
+            let value = char.unicodeScalars.first?.value ?? 0
+            return (value >= 32 && value <= 126) || // ASCII printable
+                   value == 10 || // Newline
+                   value == 9 || // Tab
+                   (value > 127 && value <= 0xFFFF) // Common Unicode
+        }
+        return cleaned
+    }
+}
+
+// MARK: - NSLock Extension
+extension NSLock {
+    func withLock<T>(_ block: () throws -> T) rethrows -> T {
+        lock()
+        defer { unlock() }
+        return try block()
     }
 }
