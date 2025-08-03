@@ -250,6 +250,53 @@ enum StreamRenderer {
         private var isUpdatingLayout = false
         private var lastWindowState: (frame: NSRect, isZoomed: Bool)?
     
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observeWindowState()
+        }
+
+        private func observeWindowState() {
+            guard let window = window else { return }
+            
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(windowDidChangeState),
+                name: NSWindow.didResizeNotification,
+                object: window
+            )
+        }
+
+        @objc private func windowDidChangeState() {
+            guard let window = window else { return }
+            
+            let currentState = (window.frame, window.isZoomed)
+            if let lastState = lastWindowState, lastState == currentState {
+                return
+            }
+            
+            lastWindowState = currentState
+            
+            // Force a layout update when window state changes
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.allowsImplicitAnimation = true
+                self.updateHeight()
+            }
+        }
+        override func layout() {
+            super.layout()
+            
+            // Calculate available width (subtracting 10 for margins + 16 for internal padding)
+            let availableWidth = max(bounds.width - 52, 150) // Never go below 150
+            
+            textView.textContainer?.containerSize = NSSize(
+                width: availableWidth,
+                height: .greatestFiniteMagnitude
+            )
+            
+            updateHeight()
+        }
+    
         init(maxWidth: CGFloat) {
             self.maxWidth = maxWidth
 
@@ -267,22 +314,6 @@ enum StreamRenderer {
 
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
-        }
-
-         override func layout() {
-            guard !isUpdatingLayout else { return }
-            isUpdatingLayout = true
-            defer { isUpdatingLayout = false }
-            
-            super.layout()
-            
-            // Update text container width
-            textView.textContainer?.containerSize = NSSize(
-                width: bounds.width, 
-                height: .greatestFiniteMagnitude
-            )
-            
-            updateHeight()
         }
 
         private func setupTextView() {
@@ -378,6 +409,9 @@ enum StreamRenderer {
         stack.addArrangedSubview(textblock)
 
         let controller = StreamMessageController(textBlock: textblock)
+        // Create dynamic width constraints
+        let bubbleWidth = bubble.widthAnchor.constraint(equalTo: container.widthAnchor, constant: -10)
+        bubbleWidth.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
@@ -387,12 +421,17 @@ enum StreamRenderer {
             
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+            
+            bubbleWidth,
             bubble.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
+            bubble.widthAnchor.constraint(greaterThanOrEqualToConstant: 200), // Absolute minimum
             
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40)
+            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
+             
         ])
-        _ = setupWindowResizeHandler(for: stack)
+        
+        _ = setupWindowResizeHandler(for: bubble, container: container)
 
         return (container, controller)
     }
@@ -402,54 +441,45 @@ enum StreamRenderer {
         return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
     }
 
-    private static func setupWindowResizeHandler(for stack: NSStackView) -> Any? {
-        guard let window = stack.window else { return nil }
+    private static func setupWindowResizeHandler(for bubble: NSView, container: NSView) -> Any? {
+        guard let window = bubble.window else { return nil }
         
-        if let observer = windowResizeObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        
-        let observer = NotificationCenter.default.addObserver(
+        return NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: window,
             queue: .main
-        ) { [weak stack] notification in
-            guard let stack = stack else { return }
-            
-            // Skip if we're in the middle of a maximize/minimize animation
-            if let window = notification.object as? NSWindow, 
-            window.styleMask.contains(.fullScreen) || 
-            window.isZoomed {
-                return
-            }
-            
-            debounceTimer?.invalidate()
-            debounceTimer = Timer.scheduledTimer(
-                withTimeInterval: 0.25, // Slightly longer debounce for smoother transitions
-                repeats: false
-            ) { _ in
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.25
-                    context.allowsImplicitAnimation = true
-                    
-                    stack.arrangedSubviews.forEach { view in
-                        guard let textBlock = (view.subviews.first?.subviews.first as? NSStackView)?
-                            .arrangedSubviews.first as? TextBlock else { return }
-                        
-                        // Use a more careful layout approach
-                        textBlock.textView.textContainer?.containerSize = NSSize(
-                            width: textBlock.bounds.width,
-                            height: .greatestFiniteMagnitude
-                        )
-                        textBlock.needsUpdateConstraints = true
-                        textBlock.needsLayout = true
-                    }
+        ) { _ in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.allowsImplicitAnimation = true
+                
+                // Update the bubble's width constraint
+                if let constraint = bubble.constraints.first(where: {
+                    $0.firstAttribute == .width && 
+                    $0.secondAttribute == .width && 
+                    $0.secondItem === container
+                }) {
+                    constraint.constant = -10 // Maintain the 10pt offset
                 }
+                
+                container.needsLayout = true
+                container.layoutSubtreeIfNeeded()
             }
         }
-        
-        windowResizeObserver = observer
-        return observer
+    }
+
+    private static func updateStackLayout(_ stack: NSStackView) {
+        stack.arrangedSubviews.forEach { view in
+            guard let textBlock = view.subviews.first?.subviews.first as? TextBlock else { return }
+            
+            // Force a layout update
+            textBlock.textView.textContainer?.containerSize = NSSize(
+                width: textBlock.bounds.width,
+                height: .greatestFiniteMagnitude
+            )
+            textBlock.needsUpdateConstraints = true
+            textBlock.needsLayout = true
+        }
     }
 }
 
