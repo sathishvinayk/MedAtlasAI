@@ -1,8 +1,10 @@
 import Cocoa
 
 // MARK: - StreamRenderer
-// MARK: - StreamRenderer
 enum StreamRenderer {
+    static var windowResizeObserver: Any?
+    static var debounceTimer: Timer?
+
     final class StreamMessageController {
         let textBlock: TextBlock
         // Unified synchronization
@@ -139,14 +141,24 @@ enum StreamRenderer {
                    _fullTextBuffer.append(update)
                    let bufferCopy = _fullTextBuffer.copy() as! NSAttributedString
                    
-                   // Directly update text block on current thread (must be main)
-                   textBlock.updateFullText(bufferCopy)
-                   
-                   if isComplete {
-                       self.stop()
-                   } else {
-                       self.startDisplayLinkIfNeeded()
-                   }
+                   DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        
+                        // Prevent animation during streaming
+                        NSAnimationContext.beginGrouping()
+                        NSAnimationContext.current.duration = 0
+                        NSAnimationContext.current.allowsImplicitAnimation = false
+                        
+                        self.textBlock.updateFullText(bufferCopy)
+                        
+                        NSAnimationContext.endGrouping()
+                        
+                        if isComplete {
+                            self.stop()
+                        } else {
+                            self.startDisplayLinkIfNeeded()
+                        }
+                    }
                }
            }
         
@@ -163,7 +175,21 @@ enum StreamRenderer {
         }
         
         private func processPendingUpdates() {
-            // Animation processing logic
+            stateLock.withLock {
+            let currentTime = CACurrentMediaTime()
+            guard currentTime - _lastRenderTime >= minFrameInterval else { return }
+            
+            _lastRenderTime = currentTime
+            
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, 
+                    !self._fullTextBuffer.string.isEmpty,
+                    self.textBlock.superview != nil else { return }
+                
+                let bufferCopy = self._fullTextBuffer.copy() as! NSAttributedString
+                self.textBlock.updateFullText(bufferCopy)
+            }
+        }
         }
         
         private func stop() {
@@ -221,6 +247,8 @@ enum StreamRenderer {
         private(set) var textView: NSTextView
         private var heightConstraint: NSLayoutConstraint?
         private let maxWidth: CGFloat
+        private var isUpdatingLayout = false
+        private var lastWindowState: (frame: NSRect, isZoomed: Bool)?
     
         init(maxWidth: CGFloat) {
             self.maxWidth = maxWidth
@@ -239,6 +267,22 @@ enum StreamRenderer {
 
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
+        }
+
+         override func layout() {
+            guard !isUpdatingLayout else { return }
+            isUpdatingLayout = true
+            defer { isUpdatingLayout = false }
+            
+            super.layout()
+            
+            // Update text container width
+            textView.textContainer?.containerSize = NSSize(
+                width: bounds.width, 
+                height: .greatestFiniteMagnitude
+            )
+            
+            updateHeight()
         }
 
         private func setupTextView() {
@@ -269,25 +313,40 @@ enum StreamRenderer {
             storage.beginEditing()
             storage.setAttributedString(text)
             storage.endEditing()
-            updateHeight()
+            
+            // Trigger layout without recursion
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                context.allowsImplicitAnimation = false
+                self.updateHeight()
+            }
         }
-
+        
         func updateHeight() {
-            guard let container = textView.textContainer,
+            guard !isUpdatingLayout,
+                let container = textView.textContainer,
                 let layoutManager = textView.layoutManager else { return }
             
+            isUpdatingLayout = true
+            defer { isUpdatingLayout = false }
+            
+            // Calculate required height
             layoutManager.ensureLayout(for: container)
             let usedRect = layoutManager.usedRect(for: container)
             let totalHeight = ceil(usedRect.height) + textView.textContainerInset.height * 2
             
+            // Update height constraint
             if let heightConstraint = heightConstraint {
                 heightConstraint.constant = totalHeight
             } else {
                 heightConstraint = heightAnchor.constraint(equalToConstant: totalHeight)
                 heightConstraint?.isActive = true
             }
-
-            superview?.layoutSubtreeIfNeeded()
+            
+            // Safely request superview layout
+            if let superview = superview, superview.inLiveResize {
+                superview.needsLayout = true
+            }
         }
     }
 
@@ -333,6 +392,7 @@ enum StreamRenderer {
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40)
         ])
+        _ = setupWindowResizeHandler(for: stack)
 
         return (container, controller)
     }
@@ -340,6 +400,56 @@ enum StreamRenderer {
     private static func calculateMaxWidth() -> CGFloat {
         let screenWidth = NSScreen.main?.visibleFrame.width ?? 800
         return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
+    }
+
+    private static func setupWindowResizeHandler(for stack: NSStackView) -> Any? {
+        guard let window = stack.window else { return nil }
+        
+        if let observer = windowResizeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification,
+            object: window,
+            queue: .main
+        ) { [weak stack] notification in
+            guard let stack = stack else { return }
+            
+            // Skip if we're in the middle of a maximize/minimize animation
+            if let window = notification.object as? NSWindow, 
+            window.styleMask.contains(.fullScreen) || 
+            window.isZoomed {
+                return
+            }
+            
+            debounceTimer?.invalidate()
+            debounceTimer = Timer.scheduledTimer(
+                withTimeInterval: 0.25, // Slightly longer debounce for smoother transitions
+                repeats: false
+            ) { _ in
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.25
+                    context.allowsImplicitAnimation = true
+                    
+                    stack.arrangedSubviews.forEach { view in
+                        guard let textBlock = (view.subviews.first?.subviews.first as? NSStackView)?
+                            .arrangedSubviews.first as? TextBlock else { return }
+                        
+                        // Use a more careful layout approach
+                        textBlock.textView.textContainer?.containerSize = NSSize(
+                            width: textBlock.bounds.width,
+                            height: .greatestFiniteMagnitude
+                        )
+                        textBlock.needsUpdateConstraints = true
+                        textBlock.needsLayout = true
+                    }
+                }
+            }
+        }
+        
+        windowResizeObserver = observer
+        return observer
     }
 }
 
