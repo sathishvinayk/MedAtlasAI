@@ -11,13 +11,16 @@ enum StreamRenderer {
         private let stateLock = NSRecursiveLock()
         private let processingQueue = DispatchQueue(label: "stream.processor", qos: .userInteractive)
         private var displayLink: DisplayLink?
+        private var lastProcessedLength: Int = 0
         
         // Protected state
         private var _isAnimating = false
         private var _fullTextBuffer = NSMutableAttributedString()
         private var _isInCodeBlock = false
+        private var _lastDisplayedLength = 0
         private var _codeBlockBuffer = ""
         private var _lastRenderTime: CFTimeInterval = 0
+        private var _lastProcessedChunk: String = ""
         
         // Constants
         private let minFrameInterval: CFTimeInterval = 1/60
@@ -77,30 +80,175 @@ enum StreamRenderer {
             .baselineOffset: 0
         ]
 
+        struct MessageSegment {
+            let content: String
+            let isCode: Bool
+        }
+
+        static func splitMarkdown(_ text: String) -> [MessageSegment] {
+            var segments: [MessageSegment] = []
+            var current = ""
+            var insideCodeBlock = false
+
+            let lines = text.components(separatedBy: .newlines)
+
+            for line in lines {
+                if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                    if insideCodeBlock {
+                        segments.append(.init(content: current, isCode: true))
+                        current = ""
+                    } else {
+                        if !current.isEmpty {
+                            segments.append(.init(content: current, isCode: false))
+                            current = ""
+                        }
+                    }
+                    insideCodeBlock.toggle()
+                    continue
+                }
+
+                current += line + "\n"
+            }
+
+            if !current.isEmpty {
+                segments.append(.init(content: current, isCode: insideCodeBlock))
+            }
+
+            return segments 
+        }
+
         init(textBlock: TextBlock) {
             self.textBlock = textBlock
         }
+
         
+        func clear() {
+            stateLock.withLock {
+                _fullTextBuffer = NSMutableAttributedString()
+                _lastDisplayedLength = 0
+                _lastProcessedChunk = ""
+                _isInCodeBlock = false
+                _codeBlockBuffer = ""
+        
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.textBlock.textView.string = ""
+                    self?.textBlock.updateHeight()
+                }
+            }
+        }
+
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.stateLock.withLock {
+                // Calculate the new text by finding the difference from last chunk
+                let newText: String
+                if chunk.hasPrefix(self._lastProcessedChunk) {
+                    let startIndex = chunk.index(chunk.startIndex, offsetBy: self._lastProcessedChunk.count)
+                    newText = String(chunk[startIndex...])
+                } else {
+                    // If prefix doesn't match, use whole chunk (fallback)
+                    newText = chunk
+                }
+                
+                // Update the last processed chunk
+                self._lastProcessedChunk = chunk
+                
+                // Append to buffer
+                self._fullTextBuffer.append(NSAttributedString(
+                    string: newText,
+                    attributes: self.regularAttributes
+                ))
+                
+                DispatchQueue.main.async {
+                    guard self.textBlock.superview != nil else { return }
+                    
+                    if isComplete {
+                        // Final render with markdown processing
+                        let segments = Self.splitMarkdown(self._fullTextBuffer.string)
+                        let formatted = self.formatSegments(segments)
+                        self.textBlock.updateFullText(formatted)
+                        self.clear()
+                    } else {
+                        // For streaming, append only the new text
+                        self.textBlock.textView.textStorage?.append(NSAttributedString(
+                            string: newText,
+                            attributes: self.regularAttributes
+                        ))
+                        self.textBlock.updateHeight()
+                    }
+                }
+            }
+        }
+    }
+    
+        
+        func appendStreamingText2(_ chunk: String, isComplete: Bool = false) {
+            
             // Capture strong reference to textBlock
-            let textBlock = self.textBlock
+//            let textBlock = self.textBlock
+            // print("\(chunk)")
             
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
-                
-                let cleanedChunk = chunk.cleanedForStream()
-                guard !cleanedChunk.isEmpty || isComplete else { return }
-                
-                let update = self.processChunk(cleanedChunk, isComplete: isComplete)
-                
-                // Ensure UI updates on main thread
-                DispatchQueue.main.async {
-                    // Verify textBlock still exists
-                    guard textBlock.superview != nil else { return }
+                self.stateLock.withLock {
+                    // Append raw text to buffer first
+                    self._fullTextBuffer.append(NSAttributedString(
+                        string: chunk,
+                        attributes: self.regularAttributes
+                    ))
                     
-                    self.commitUpdate(update, isComplete: isComplete)
+                    DispatchQueue.main.async {
+                        guard self.textBlock.superview != nil else { return }
+                        
+                        if isComplete {
+                            // Final render with markdown processing
+                            let segments = Self.splitMarkdown(self._fullTextBuffer.string)
+                            let formatted = self.formatSegments(segments)
+                            self.textBlock.updateFullText(formatted)
+                            self._fullTextBuffer = NSMutableAttributedString()
+                        } else {
+                            // Immediate streaming display
+                            self.textBlock.updateFullText(self._fullTextBuffer)
+                        }
+                    }
+                }
+                
+                // // let cleanedChunk = chunk.cleanedForStream()
+                // // guard !cleanedChunk.isEmpty || isComplete else { return }
+                
+                // // let update = self.processChunk(cleanedChunk, isComplete: isComplete)
+                
+                // // Ensure UI updates on main thread
+                // DispatchQueue.main.async {
+                //     let segments = StreamRenderer.StreamMessageController.splitMarkdown(chunk)
+
+                //     // Verify textBlock still exists
+                //     guard textBlock.superview != nil else { return }
+
+                    
+                //     // self.commitUpdate(segments, isComplete: isComplete)
+                // }
+            }
+        }
+
+        private func formatSegments(_ segments: [MessageSegment]) -> NSAttributedString {
+            let result = NSMutableAttributedString()
+            for segment in segments {
+                if segment.isCode {
+                    result.append(createCodeBlockDelimiter())
+                    result.append(createCodeBlockContent(segment.content))
+                    result.append(createCodeBlockDelimiter())
+                } else {
+                    result.append(NSAttributedString(
+                        string: segment.content,
+                        attributes: regularAttributes
+                    ))
                 }
             }
+            return result
         }
         
         private func processChunk(_ chunk: String, isComplete: Bool) -> NSMutableAttributedString {
@@ -192,31 +340,57 @@ enum StreamRenderer {
         }
     }
         
-        private func commitUpdate(_ update: NSMutableAttributedString, isComplete: Bool) {
-               stateLock.withLock {
-                   _fullTextBuffer.append(update)
-                   let bufferCopy = _fullTextBuffer.copy() as! NSAttributedString
-                   
-                   DispatchQueue.main.async { [weak self] in
-                        guard let self = self else { return }
-                        
-                        // Prevent animation during streaming
-                        NSAnimationContext.beginGrouping()
-                        NSAnimationContext.current.duration = 0
-                        NSAnimationContext.current.allowsImplicitAnimation = false
-                        
-                        self.textBlock.updateFullText(bufferCopy)
-                        
-                        NSAnimationContext.endGrouping()
-                        
-                        if isComplete {
-                            self.stop()
-                        } else {
-                            self.startDisplayLinkIfNeeded()
-                        }
+        private func commitUpdate(_ segments: [MessageSegment], isComplete: Bool) {
+            stateLock.withLock { [self] in
+                // if isComplete || _fullTextBuffer.length == 0 {
+                //     _fullTextBuffer = NSMutableAttributedString()
+                // }
+                for segment in segments {
+                    print("\(segment)")
+                    if !segment.isCode {
+                        _fullTextBuffer.append(NSAttributedString(
+                            string: segment.content, // Add space between segments
+                            attributes: regularAttributes
+                        ))
                     }
-               }
-           }
+                }
+                guard isComplete else { return }
+                
+                let bufferCopy = _fullTextBuffer.copy() as! NSAttributedString
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    
+                    
+                    // Update text view with complete message
+                    self.textBlock.updateFullText(bufferCopy)
+                    self.stop()
+                    
+                    // Clear buffer after display
+                    self.stateLock.withLock {
+                        self._fullTextBuffer = NSMutableAttributedString()
+                    }
+                }
+            
+                // DispatchQueue.main.async { [weak self] in
+                //     guard let self = self else { return }
+                    
+                //     // Prevent animation during streaming
+                //     NSAnimationContext.beginGrouping()
+                //     NSAnimationContext.current.duration = 0
+                //     NSAnimationContext.current.allowsImplicitAnimation = false
+                    
+                //     self.textBlock.updateFullText(bufferCopy)
+                    
+                //     NSAnimationContext.endGrouping()
+                    
+                //     if isComplete {
+                //         self.stop()
+                //     } else {
+                //         self.startDisplayLinkIfNeeded()
+                //     }
+                // }  
+            }
+        }
         
         private func startDisplayLinkIfNeeded() {
             stateLock.withLock {
@@ -253,19 +427,6 @@ enum StreamRenderer {
                 _isAnimating = false
                 displayLink?.stop()
                 displayLink = nil
-            }
-        }
-        
-        func clear() {
-            stateLock.withLock {
-                _fullTextBuffer = NSMutableAttributedString()
-                _isInCodeBlock = false
-                _codeBlockBuffer = ""
-                
-                DispatchQueue.main.async { [weak self] in
-                    self?.textBlock.textView.string = ""
-                    self?.textBlock.updateHeight()
-                }
             }
         }
         
@@ -418,6 +579,7 @@ enum StreamRenderer {
             textView.textContainer?.lineFragmentPadding = 0
             textView.textContainer?.widthTracksTextView = true
             textView.isHorizontallyResizable = false
+            textView.layoutManager?.allowsNonContiguousLayout = false
             
             addSubview(textView)
             
@@ -433,6 +595,7 @@ enum StreamRenderer {
         func updateFullText(_ text: NSAttributedString) {
             assert(Thread.isMainThread, "Text updates must be on main thread")
             guard let storage = textView.textStorage else { return }
+            print("text -> \(text)")
             
             storage.beginEditing()
             storage.setAttributedString(text)
