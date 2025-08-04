@@ -21,11 +21,7 @@ enum StreamRenderer {
         
         // Constants
         private let minFrameInterval: CFTimeInterval = 1/60
-        
-        private let regularAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14),
-            .foregroundColor: NSColor.textColor
-        ]
+ 
 
         // Thread-safe property access
         private var isAnimating: Bool {
@@ -42,16 +38,43 @@ enum StreamRenderer {
             get { stateLock.withLock { _codeBlockBuffer } }
             set { stateLock.withLock { _codeBlockBuffer = newValue } }
         }
+
+        private func createCodeBlockDelimiter() -> NSMutableAttributedString {
+            let delimiter = NSMutableAttributedString(string: "```\n", attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                .foregroundColor: NSColor.systemGray,
+                .backgroundColor: NSColor.controlBackgroundColor
+            ])
+            return delimiter
+        }
         
         private let codeBlockAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor.textColor,
-            .backgroundColor: NSColor.controlBackgroundColor
+            .backgroundColor: NSColor.controlBackgroundColor,
+            .paragraphStyle: {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.2
+                style.paragraphSpacing = 8
+                return style
+            }()
         ]
-        
+
+        private let regularAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14),
+            .foregroundColor: NSColor.textColor,
+            .paragraphStyle: {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.2
+                return style
+            }()
+        ]
+
         private let inlineCodeAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
-            .backgroundColor: NSColor.controlBackgroundColor.withAlphaComponent(0.3)
+            .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: NSColor.systemOrange,
+            .backgroundColor: NSColor.controlBackgroundColor.withAlphaComponent(0.3),
+            .baselineOffset: 0
         ]
 
         init(textBlock: TextBlock) {
@@ -85,47 +108,80 @@ enum StreamRenderer {
                 let update = NSMutableAttributedString()
                 var remainingChunk = chunk
                 
+                // Handle existing code block content
                 if _isInCodeBlock {
-                    if let closingRange = remainingChunk.range(of: "```") {
-                        let codeContent = String(remainingChunk[..<closingRange.lowerBound])
+                    if let endRange = remainingChunk.range(of: "```") {
+                        // Content before closing ticks
+                        let codeContent = String(remainingChunk[..<endRange.lowerBound])
                         _codeBlockBuffer += codeContent
                         
+                        // Format the complete code block
                         update.append(createCodeBlockDelimiter())
                         update.append(createCodeBlockContent(_codeBlockBuffer))
                         update.append(createCodeBlockDelimiter())
                         
+                        // Reset state
                         _codeBlockBuffer = ""
                         _isInCodeBlock = false
-                        remainingChunk = String(remainingChunk[closingRange.upperBound...])
+                        
+                        // Process remaining text
+                        remainingChunk = String(remainingChunk[endRange.upperBound...])
                     } else {
+                        // No closing ticks found - buffer entire chunk
                         _codeBlockBuffer += remainingChunk
                         return NSMutableAttributedString()
                     }
                 }
                 
-                if !remainingChunk.isEmpty && !_isInCodeBlock {
-                    if let openingRange = remainingChunk.range(of: "```") {
-                        let textBefore = String(remainingChunk[..<openingRange.lowerBound])
+                // Process remaining text for new code blocks
+                while !remainingChunk.isEmpty {
+                    if let startRange = remainingChunk.range(of: "```") {
+                        // Add text before code block
+                        let textBefore = String(remainingChunk[..<startRange.lowerBound])
                         if !textBefore.isEmpty {
                             update.append(processInlineText(textBefore))
                         }
                         
+                        // Start new code block
                         _isInCodeBlock = true
                         update.append(createCodeBlockDelimiter())
                         
-                        let afterTicks = remainingChunk.index(openingRange.lowerBound, offsetBy: 3)
-                        remainingChunk = String(remainingChunk[afterTicks...])
-                        _codeBlockBuffer = remainingChunk
-                        remainingChunk = ""
-                    }
-                    
-                    if !remainingChunk.isEmpty {
+                        // Check for language specifier (e.g., ```java)
+                        let afterTicks = remainingChunk.index(startRange.lowerBound, offsetBy: 3)
+                        let potentialLanguage = remainingChunk[afterTicks...]
+                            .prefix(while: { !$0.isNewline })
+                            .trimmingCharacters(in: .whitespaces)
+                        
+                        // Skip language specifier if present
+                        let contentStart = potentialLanguage.isEmpty ? afterTicks :
+                            remainingChunk.index(afterTicks, offsetBy: potentialLanguage.count)
+                        remainingChunk = String(remainingChunk[contentStart...])
+                        
+                        // Look for closing ticks in same chunk
+                        if let endRange = remainingChunk.range(of: "```") {
+                            let codeContent = String(remainingChunk[..<endRange.lowerBound])
+                            _codeBlockBuffer = codeContent
+                            
+                            update.append(createCodeBlockContent(_codeBlockBuffer))
+                            update.append(createCodeBlockDelimiter())
+                            
+                            _codeBlockBuffer = ""
+                            _isInCodeBlock = false
+                            remainingChunk = String(remainingChunk[endRange.upperBound...])
+                        } else {
+                            // No closing ticks - buffer remaining content
+                            _codeBlockBuffer = remainingChunk
+                            remainingChunk = ""
+                        }
+                    } else {
+                        // No code blocks - process as regular text
                         update.append(processInlineText(remainingChunk))
+                        remainingChunk = ""
                     }
                 }
                 
+                // Handle incomplete code block at stream end
                 if isComplete && _isInCodeBlock {
-                    update.append(createCodeBlockDelimiter())
                     update.append(createCodeBlockContent(_codeBlockBuffer))
                     update.append(createCodeBlockDelimiter())
                     _codeBlockBuffer = ""
@@ -133,8 +189,8 @@ enum StreamRenderer {
                 }
                 
                 return update
-            }
         }
+    }
         
         private func commitUpdate(_ update: NSMutableAttributedString, isComplete: Bool) {
                stateLock.withLock {
@@ -182,7 +238,7 @@ enum StreamRenderer {
             _lastRenderTime = currentTime
             
             DispatchQueue.main.async { [weak self] in
-                guard let self = self, 
+                guard let self = self,
                     !self._fullTextBuffer.string.isEmpty,
                     self.textBlock.superview != nil else { return }
                 
@@ -219,22 +275,59 @@ enum StreamRenderer {
         }
         
         private func createCodeBlockContent(_ text: String) -> NSMutableAttributedString {
-            return NSMutableAttributedString(string: text, attributes: codeBlockAttributes)
-        }
-        
-        private func createCodeBlockDelimiter() -> NSMutableAttributedString {
-            return NSMutableAttributedString(string: "```\n", attributes: codeBlockAttributes)
+            // Clean up the code content
+            let cleanedText = text
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\t", with: "    ") // Convert tabs to spaces
+            
+            let content = NSMutableAttributedString(string: cleanedText + "\n", attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                .foregroundColor: NSColor.textColor,
+                .backgroundColor: NSColor.controlBackgroundColor,
+                .paragraphStyle: {
+                    let style = NSMutableParagraphStyle()
+                    style.lineHeightMultiple = 1.2
+                    style.paragraphSpacing = 4
+                    return style
+                }()
+            ])
+            return content
         }
         
         private func processInlineText(_ text: String) -> NSMutableAttributedString {
-            let result = NSMutableAttributedString()
-            let parts = text.components(separatedBy: "`")
+            let result = NSMutableAttributedString(string: text, attributes: regularAttributes)
             
-            for (index, part) in parts.enumerated() {
-                if index % 2 == 0 {
-                    result.append(createRegularText(part))
-                } else {
-                    result.append(NSMutableAttributedString(string: part, attributes: inlineCodeAttributes))
+            // Only process backticks if they come in pairs
+            let backtickCount = text.filter { $0 == "`" }.count
+            guard backtickCount >= 2 && backtickCount % 2 == 0 else {
+                return result
+            }
+            
+            var backtickRanges = [Range<String.Index>]()
+            var currentIndex = text.startIndex
+            
+            // Find all backtick pairs
+            while let range = text.range(of: "`", range: currentIndex..<text.endIndex) {
+                backtickRanges.append(range)
+                currentIndex = range.upperBound
+            }
+            
+            // Apply formatting to text between backtick pairs
+            for i in stride(from: 0, to: backtickRanges.count, by: 2) {
+                if i+1 >= backtickRanges.count { break }
+                
+                let start = backtickRanges[i].upperBound
+                let end = backtickRanges[i+1].lowerBound
+                let codeRange = NSRange(start..<end, in: text)
+                
+                if codeRange.location != NSNotFound {
+                    result.setAttributes(inlineCodeAttributes, range: codeRange)
+                    
+                    // Remove the backticks themselves from display
+                    let openingRange = NSRange(backtickRanges[i], in: text)
+                    let closingRange = NSRange(backtickRanges[i+1], in: text)
+                    result.replaceCharacters(in: closingRange, with: "")
+                    result.replaceCharacters(in: openingRange, with: "")
                 }
             }
             
@@ -455,8 +548,8 @@ enum StreamRenderer {
                 
                 // Update the bubble's width constraint
                 if let constraint = bubble.constraints.first(where: {
-                    $0.firstAttribute == .width && 
-                    $0.secondAttribute == .width && 
+                    $0.firstAttribute == .width &&
+                    $0.secondAttribute == .width &&
                     $0.secondItem === container
                 }) {
                     constraint.constant = -10 // Maintain the 10pt offset
