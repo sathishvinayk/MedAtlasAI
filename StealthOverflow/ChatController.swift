@@ -69,11 +69,8 @@ class ChatController {
             // Safely get controller reference
             let controller = self.currentStreamingTextController
             
-            if controller == nil {
+             if controller == nil {
                 self.initializeStreamingController()
-                // Get new controller reference after initialization
-                self.currentStreamingTextController?.appendStreamingText(chunk)
-                return
             }
             
             self.typingIndicator?.removeFromSuperview()
