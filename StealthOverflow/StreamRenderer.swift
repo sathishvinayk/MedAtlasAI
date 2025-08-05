@@ -39,13 +39,13 @@ enum StreamRenderer {
             set { stateLock.withLock { _codeBlockBuffer = newValue } }
         }
 
-        private func createCodeBlockDelimiter() -> NSMutableAttributedString {
-            let delimiter = NSMutableAttributedString(string: "```\n", attributes: [
+        private func createCodeBlockDelimiter(language: String = "") -> NSMutableAttributedString {
+            let delimiterText = language.isEmpty ? "```\n" : "```\(language)\n"
+            return NSMutableAttributedString(string: delimiterText, attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
                 .foregroundColor: NSColor.systemGray,
                 .backgroundColor: NSColor.controlBackgroundColor
             ])
-            return delimiter
         }
         
         private let codeBlockAttributes: [NSAttributedString.Key: Any] = [
@@ -88,7 +88,7 @@ enum StreamRenderer {
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
                 
-                let cleanedChunk = chunk.cleanedForStream()
+                let cleanedChunk = chunk.cleanedForStream().normalizeMarkdownCodeBlocks()
                 guard !cleanedChunk.isEmpty || isComplete else { return }
                 
                 let update = self.processChunk(cleanedChunk, isComplete: isComplete)
@@ -110,7 +110,7 @@ enum StreamRenderer {
                 
                 // Handle existing code block content
                 if _isInCodeBlock {
-                    if let endRange = remainingChunk.range(of: "```") {
+                    if let endRange = findCodeBlockEnd(in: remainingChunk) {
                         // Content before closing ticks
                         let codeContent = String(remainingChunk[..<endRange.lowerBound])
                         _codeBlockBuffer += codeContent
@@ -134,46 +134,39 @@ enum StreamRenderer {
                 }
                 
                 // Process remaining text for new code blocks
+                // Process remaining text for new code blocks using improved regex detection
                 while !remainingChunk.isEmpty {
-                    if let startRange = remainingChunk.range(of: "```") {
+                    if let match = findCompleteCodeBlock(in: remainingChunk) {
                         // Add text before code block
+                        let textBefore = String(remainingChunk[..<match.range.lowerBound])
+                        if !textBefore.isEmpty {
+                            update.append(processInlineText(textBefore))
+                        }
+                        
+                        // Add the complete code block
+                        update.append(createCodeBlockDelimiter(language: match.language))
+                        update.append(createCodeBlockContent(match.content))
+                        update.append(createCodeBlockDelimiter())
+                        
+                        // Skip processed content
+                        remainingChunk = String(remainingChunk[match.range.upperBound...])
+                    } 
+                    else if let (startRange, language) = findCodeBlockStart(in: remainingChunk) {
+                        // Handle partial code block (start found but no end)
                         let textBefore = String(remainingChunk[..<startRange.lowerBound])
                         if !textBefore.isEmpty {
                             update.append(processInlineText(textBefore))
                         }
                         
-                        // Start new code block
                         _isInCodeBlock = true
-                        update.append(createCodeBlockDelimiter())
-                        
-                        // Check for language specifier (e.g., ```java)
-                        let afterTicks = remainingChunk.index(startRange.lowerBound, offsetBy: 3)
-                        let potentialLanguage = remainingChunk[afterTicks...]
-                            .prefix(while: { !$0.isNewline })
-                            .trimmingCharacters(in: .whitespaces)
+                        update.append(createCodeBlockDelimiter(language: language))
                         
                         // Skip language specifier if present
-                        let contentStart = potentialLanguage.isEmpty ? afterTicks :
-                            remainingChunk.index(afterTicks, offsetBy: potentialLanguage.count)
-                        remainingChunk = String(remainingChunk[contentStart...])
-                        
-                        // Look for closing ticks in same chunk
-                        if let endRange = remainingChunk.range(of: "```") {
-                            let codeContent = String(remainingChunk[..<endRange.lowerBound])
-                            _codeBlockBuffer = codeContent
-                            
-                            update.append(createCodeBlockContent(_codeBlockBuffer))
-                            update.append(createCodeBlockDelimiter())
-                            
-                            _codeBlockBuffer = ""
-                            _isInCodeBlock = false
-                            remainingChunk = String(remainingChunk[endRange.upperBound...])
-                        } else {
-                            // No closing ticks - buffer remaining content
-                            _codeBlockBuffer = remainingChunk
-                            remainingChunk = ""
-                        }
-                    } else {
+                        let contentStart = remainingChunk.index(startRange.lowerBound, offsetBy: 3 + language.count)
+                        _codeBlockBuffer = String(remainingChunk[contentStart...])
+                        remainingChunk = ""
+                    }
+                    else {
                         // No code blocks - process as regular text
                         update.append(processInlineText(remainingChunk))
                         remainingChunk = ""
@@ -189,8 +182,74 @@ enum StreamRenderer {
                 }
                 
                 return update
+            }
         }
-    }
+
+        private struct CodeBlockMatch {
+            let range: Range<String.Index>
+            let language: String
+            let content: String
+        }
+
+        private func findCompleteCodeBlock(in text: String) -> CodeBlockMatch? {
+            let pattern = #"(?s)(^|\n)(?<ticks>```+)(?<language>\w*)\n(?<content>.*?)\n?(?<closing>```+)(\n|$)"#
+            
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else {
+                return nil
+            }
+            
+            let ticksRange = Range(match.range(withName: "ticks"), in: text)!
+            let languageRange = Range(match.range(withName: "language"), in: text)!
+            let contentRange = Range(match.range(withName: "content"), in: text)!
+            let closingRange = Range(match.range(withName: "closing"), in: text)!
+            
+            let fullRange = Range(match.range, in: text)!
+            let language = String(text[languageRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let content = String(text[contentRange])
+            
+            // Verify ticks count matches (at least 3)
+            let ticksCount = text[ticksRange].count
+            let closingCount = text[closingRange].count
+            guard ticksCount >= 3 && closingCount >= 3 else { return nil }
+            
+            return CodeBlockMatch(
+                range: fullRange,
+                language: language,
+                content: content
+            )
+        }
+
+        private func findCodeBlockStart(in text: String) -> (range: Range<String.Index>, language: String)? {
+            let pattern = #"(^|\n)(?<ticks>```+)(?<language>\w*)(\n|$)"#
+            
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                let ticksRange = Range(match.range(withName: "ticks"), in: text),
+                text[ticksRange].count >= 3 else {
+                return nil
+            }
+            
+            let fullRange = Range(match.range, in: text)!
+            let language = match.range(withName: "language").location != NSNotFound ?
+                String(text[Range(match.range(withName: "language"), in: text)!]).trimmingCharacters(in: .whitespacesAndNewlines) :
+                ""
+            
+            return (fullRange, language)
+        }
+
+        private func findCodeBlockEnd(in text: String) -> Range<String.Index>? {
+            let pattern = #"(^|\n)(?<ticks>```+)(\n|$)"#
+            
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                let ticksRange = Range(match.range(withName: "ticks"), in: text),
+                text[ticksRange].count >= 3 else {
+                return nil
+            }
+            
+            return Range(match.range, in: text)
+        }
         
         private func commitUpdate(_ update: NSMutableAttributedString, isComplete: Bool) {
                stateLock.withLock {
@@ -598,3 +657,56 @@ extension NSLock {
         return try block()
     }
 }
+
+extension String {
+    func normalizeMarkdownCodeBlocks() -> String {
+        var result = self
+        
+        // Fix double/malformed code blocks
+        result = result.replacingOccurrences(
+            of: #"```(\w*)\s*```(\w+)"#,
+            with: "```$2",
+            options: .regularExpression
+        )
+        
+        // Fix single-letter language specifiers
+        result = result.replacingOccurrences(
+            of: #"```(\w)\s"#,
+            with: "```$1",
+            options: .regularExpression
+        )
+        
+        // Ensure newlines around code blocks
+        result = result.replacingOccurrences(
+            of: #"(?<!\n)```(\w*)"#,
+            with: "\n```$1",
+            options: .regularExpression
+        )
+        
+        return result
+    }
+}
+
+// extension String {
+//     func normalizeMarkdownCodeBlocks() -> String {
+//         var result = self
+        
+//         // Fix common malformed code block patterns
+//         let patterns = [
+//             #"(?<!\n)(```)(\w*)\n"#: "```$2\n", // Fix missing newline after ```
+//             #"```(\w+)[^\S\n]+(\n)"#: "```$1$2", // Fix extra spaces after language
+//             #"```\n+```"#: "```\n```", // Fix excessive newlines
+//             #"`{1,2}([^`\n]+)`{1,2}"#: "`$1`" // Normalize inline code ticks
+//         ]
+        
+//         for (pattern, replacement) in patterns {
+//             result = result.replacingOccurrences(
+//                 of: pattern,
+//                 with: replacement,
+//                 options: .regularExpression
+//             )
+//         }
+        
+//         return result
+//     }
+// }
