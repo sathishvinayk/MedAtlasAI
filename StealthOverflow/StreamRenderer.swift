@@ -129,78 +129,37 @@ enum StreamRenderer {
                 _lastProcessedChunk = ""
                 _isInCodeBlock = false
                 _codeBlockBuffer = ""
-        
                 
-                DispatchQueue.main.async { [weak self] in
-                    self?.textBlock.textView.string = ""
-                    self?.textBlock.updateHeight()
-                }
+                // Don't clear the text view - it should maintain its content
+                // Removed: self?.textBlock.textView.string = ""
             }
         }
 
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
-        processingQueue.async { [weak self] in
-            guard let self = self else { return }
-            
-            self.stateLock.withLock {
-                // Calculate the new text by finding the difference from last chunk
-                let newText: String
-                if chunk.hasPrefix(self._lastProcessedChunk) {
-                    let startIndex = chunk.index(chunk.startIndex, offsetBy: self._lastProcessedChunk.count)
-                    newText = String(chunk[startIndex...])
-                } else {
-                    // If prefix doesn't match, use whole chunk (fallback)
-                    newText = chunk
-                }
-                
-                // Update the last processed chunk
-                self._lastProcessedChunk = chunk
-                
-                // Append to buffer
-                self._fullTextBuffer.append(NSAttributedString(
-                    string: newText,
-                    attributes: self.regularAttributes
-                ))
-                
-                DispatchQueue.main.async {
-                    guard self.textBlock.superview != nil else { return }
-                    
-                    if isComplete {
-                        // Final render with markdown processing
-                        let segments = Self.splitMarkdown(self._fullTextBuffer.string)
-                        let formatted = self.formatSegments(segments)
-                        self.textBlock.updateFullText(formatted)
-                        self.clear()
-                    } else {
-                        // For streaming, append only the new text
-                        self.textBlock.textView.textStorage?.append(NSAttributedString(
-                            string: newText,
-                            attributes: self.regularAttributes
-                        ))
-                        self.textBlock.updateHeight()
-                    }
-                }
-            }
-        }
-    }
-    
-        
-        func appendStreamingText2(_ chunk: String, isComplete: Bool = false) {
-            
-            // Capture strong reference to textBlock
-//            let textBlock = self.textBlock
-            // print("\(chunk)")
-            
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
+                
                 self.stateLock.withLock {
-                    // Append raw text to buffer first
+                    // Calculate the new text by finding the difference from last chunk
+                    let newText: String
+                    if chunk.hasPrefix(self._lastProcessedChunk) {
+                        let startIndex = chunk.index(chunk.startIndex, offsetBy: self._lastProcessedChunk.count)
+                        newText = String(chunk[startIndex...])
+                    } else {
+                        // If prefix doesn't match, use whole chunk (fallback)
+                        newText = chunk
+                    }
+                    
+                    // Update the last processed chunk
+                    self._lastProcessedChunk = chunk
+                    
+                    // Append to buffer
                     self._fullTextBuffer.append(NSAttributedString(
-                        string: chunk,
+                        string: newText,
                         attributes: self.regularAttributes
                     ))
                     
-                    DispatchQueue.main.async {
+                     DispatchQueue.main.async {
                         guard self.textBlock.superview != nil else { return }
                         
                         if isComplete {
@@ -208,29 +167,16 @@ enum StreamRenderer {
                             let segments = Self.splitMarkdown(self._fullTextBuffer.string)
                             let formatted = self.formatSegments(segments)
                             self.textBlock.updateFullText(formatted)
-                            self._fullTextBuffer = NSMutableAttributedString()
                         } else {
-                            // Immediate streaming display
-                            self.textBlock.updateFullText(self._fullTextBuffer)
+                            // For streaming, append only the new text
+                            self.textBlock.textView.textStorage?.append(NSAttributedString(
+                                string: newText,
+                                attributes: self.regularAttributes
+                            ))
+                            self.textBlock.updateHeight()
                         }
                     }
                 }
-                
-                // // let cleanedChunk = chunk.cleanedForStream()
-                // // guard !cleanedChunk.isEmpty || isComplete else { return }
-                
-                // // let update = self.processChunk(cleanedChunk, isComplete: isComplete)
-                
-                // // Ensure UI updates on main thread
-                // DispatchQueue.main.async {
-                //     let segments = StreamRenderer.StreamMessageController.splitMarkdown(chunk)
-
-                //     // Verify textBlock still exists
-                //     guard textBlock.superview != nil else { return }
-
-                    
-                //     // self.commitUpdate(segments, isComplete: isComplete)
-                // }
             }
         }
 
@@ -249,147 +195,6 @@ enum StreamRenderer {
                 }
             }
             return result
-        }
-        
-        private func processChunk(_ chunk: String, isComplete: Bool) -> NSMutableAttributedString {
-            return stateLock.withLock {
-                let update = NSMutableAttributedString()
-                var remainingChunk = chunk
-                
-                // Handle existing code block content
-                if _isInCodeBlock {
-                    if let endRange = remainingChunk.range(of: "```") {
-                        // Content before closing ticks
-                        let codeContent = String(remainingChunk[..<endRange.lowerBound])
-                        _codeBlockBuffer += codeContent
-                        
-                        // Format the complete code block
-                        update.append(createCodeBlockDelimiter())
-                        update.append(createCodeBlockContent(_codeBlockBuffer))
-                        update.append(createCodeBlockDelimiter())
-                        
-                        // Reset state
-                        _codeBlockBuffer = ""
-                        _isInCodeBlock = false
-                        
-                        // Process remaining text
-                        remainingChunk = String(remainingChunk[endRange.upperBound...])
-                    } else {
-                        // No closing ticks found - buffer entire chunk
-                        _codeBlockBuffer += remainingChunk
-                        return NSMutableAttributedString()
-                    }
-                }
-                
-                // Process remaining text for new code blocks
-                while !remainingChunk.isEmpty {
-                    if let startRange = remainingChunk.range(of: "```") {
-                        // Add text before code block
-                        let textBefore = String(remainingChunk[..<startRange.lowerBound])
-                        if !textBefore.isEmpty {
-                            update.append(processInlineText(textBefore))
-                        }
-                        
-                        // Start new code block
-                        _isInCodeBlock = true
-                        update.append(createCodeBlockDelimiter())
-                        
-                        // Check for language specifier (e.g., ```java)
-                        let afterTicks = remainingChunk.index(startRange.lowerBound, offsetBy: 3)
-                        let potentialLanguage = remainingChunk[afterTicks...]
-                            .prefix(while: { !$0.isNewline })
-                            .trimmingCharacters(in: .whitespaces)
-                        
-                        // Skip language specifier if present
-                        let contentStart = potentialLanguage.isEmpty ? afterTicks :
-                            remainingChunk.index(afterTicks, offsetBy: potentialLanguage.count)
-                        remainingChunk = String(remainingChunk[contentStart...])
-                        
-                        // Look for closing ticks in same chunk
-                        if let endRange = remainingChunk.range(of: "```") {
-                            let codeContent = String(remainingChunk[..<endRange.lowerBound])
-                            _codeBlockBuffer = codeContent
-                            
-                            update.append(createCodeBlockContent(_codeBlockBuffer))
-                            update.append(createCodeBlockDelimiter())
-                            
-                            _codeBlockBuffer = ""
-                            _isInCodeBlock = false
-                            remainingChunk = String(remainingChunk[endRange.upperBound...])
-                        } else {
-                            // No closing ticks - buffer remaining content
-                            _codeBlockBuffer = remainingChunk
-                            remainingChunk = ""
-                        }
-                    } else {
-                        // No code blocks - process as regular text
-                        update.append(processInlineText(remainingChunk))
-                        remainingChunk = ""
-                    }
-                }
-                
-                // Handle incomplete code block at stream end
-                if isComplete && _isInCodeBlock {
-                    update.append(createCodeBlockContent(_codeBlockBuffer))
-                    update.append(createCodeBlockDelimiter())
-                    _codeBlockBuffer = ""
-                    _isInCodeBlock = false
-                }
-                
-                return update
-        }
-    }
-        
-        private func commitUpdate(_ segments: [MessageSegment], isComplete: Bool) {
-            stateLock.withLock { [self] in
-                // if isComplete || _fullTextBuffer.length == 0 {
-                //     _fullTextBuffer = NSMutableAttributedString()
-                // }
-                for segment in segments {
-                    print("\(segment)")
-                    if !segment.isCode {
-                        _fullTextBuffer.append(NSAttributedString(
-                            string: segment.content, // Add space between segments
-                            attributes: regularAttributes
-                        ))
-                    }
-                }
-                guard isComplete else { return }
-                
-                let bufferCopy = _fullTextBuffer.copy() as! NSAttributedString
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    
-                    
-                    // Update text view with complete message
-                    self.textBlock.updateFullText(bufferCopy)
-                    self.stop()
-                    
-                    // Clear buffer after display
-                    self.stateLock.withLock {
-                        self._fullTextBuffer = NSMutableAttributedString()
-                    }
-                }
-            
-                // DispatchQueue.main.async { [weak self] in
-                //     guard let self = self else { return }
-                    
-                //     // Prevent animation during streaming
-                //     NSAnimationContext.beginGrouping()
-                //     NSAnimationContext.current.duration = 0
-                //     NSAnimationContext.current.allowsImplicitAnimation = false
-                    
-                //     self.textBlock.updateFullText(bufferCopy)
-                    
-                //     NSAnimationContext.endGrouping()
-                    
-                //     if isComplete {
-                //         self.stop()
-                //     } else {
-                //         self.startDisplayLinkIfNeeded()
-                //     }
-                // }  
-            }
         }
         
         private func startDisplayLinkIfNeeded() {
@@ -420,15 +225,15 @@ enum StreamRenderer {
                 self.textBlock.updateFullText(bufferCopy)
             }
         }
-        }
+    }
         
-        private func stop() {
-            stateLock.withLock {
-                _isAnimating = false
-                displayLink?.stop()
-                displayLink = nil
-            }
+    private func stop() {
+        stateLock.withLock {
+            _isAnimating = false
+            displayLink?.stop()
+            displayLink = nil
         }
+    }
         
         // Helper methods
         private func createRegularText(_ text: String) -> NSMutableAttributedString {
