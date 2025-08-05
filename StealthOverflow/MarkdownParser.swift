@@ -11,7 +11,6 @@ struct MarkdownParser {
         var blocks: [MessageBlock] = []
         var current = ""
         var isCodeBlock = false
-        var backtickCount = 0
         
         let lines = input.components(separatedBy: .newlines)
         var i = 0

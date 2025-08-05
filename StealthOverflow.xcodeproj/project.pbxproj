@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1578FBEB2E34B23100B2C0E3 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 1578FBEA2E34B23100B2C0E3 /* Highlightr */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		153EEC6A2E22992C002359DC /* StealthOverflow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StealthOverflow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1578FBEB2E34B23100B2C0E3 /* Highlightr in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = StealthOverflow;
 			packageProductDependencies = (
+				1578FBEA2E34B23100B2C0E3 /* Highlightr */,
 			);
 			productName = StealthOverflow;
 			productReference = 153EEC6A2E22992C002359DC /* StealthOverflow.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 153EEC612E22992C002359DC;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1578FBE92E34B23100B2C0E3 /* XCRemoteSwiftPackageReference "Highlightr" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 153EEC6B2E22992C002359DC /* Products */;
 			projectDirPath = "";
@@ -327,6 +336,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1578FBE92E34B23100B2C0E3 /* XCRemoteSwiftPackageReference "Highlightr" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/raspu/Highlightr";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.3.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1578FBEA2E34B23100B2C0E3 /* Highlightr */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1578FBE92E34B23100B2C0E3 /* XCRemoteSwiftPackageReference "Highlightr" */;
+			productName = Highlightr;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 153EEC622E22992C002359DC /* Project object */;
 }
