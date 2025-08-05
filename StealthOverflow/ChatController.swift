@@ -128,9 +128,7 @@ class ChatController {
             self.processChunk(chunk)
             
             // Safely get controller reference
-            let controller = self.currentStreamingTextController
-            
-             if controller == nil {
+            if self.currentStreamingTextController == nil {
                 self.initializeStreamingController()
             }
             
@@ -138,12 +136,13 @@ class ChatController {
             self.typingIndicator = nil
             
             // Thread-safe append with main thread guarantee
-            controller?.appendStreamingText(self.assistantResponseBuffer.string, isComplete: false)
+            self.currentStreamingTextController?.appendStreamingText(self.assistantResponseBuffer.string, isComplete: false)
         }
     }
 
     private func handleStreamCompletion() {
         DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
              // Get the current controller strongly
             guard let controller = self.currentStreamingTextController else {
                 self.typingIndicator?.removeFromSuperview()
@@ -160,10 +159,11 @@ class ChatController {
             self.typingIndicator?.removeFromSuperview()
             self.typingIndicator = nil
             
-            // Delayed cleanup with identity check
+             // Delayed cleanup with identity check
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak controller] in
-                if let current = self?.currentStreamingTextController, current === controller {
-                    self?.currentStreamingTextController = nil
+                guard let self = self else { return }
+                if let currentController = self.currentStreamingTextController, currentController === controller {
+                    self.currentStreamingTextController = nil
                 }
             }
         }
