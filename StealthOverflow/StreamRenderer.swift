@@ -6,6 +6,14 @@ enum StreamRenderer {
     static var debounceTimer: Timer?
 
     final class StreamMessageController {
+
+        // MARK: - State Management
+        private enum ParserState {
+            case text
+            case potentialCodeBlockStart(backticks: String)
+            case inCodeBlock(language: String, openingBackticks: String)
+            case potentialCodeBlockEnd(backticks: String)
+        }
         let textBlock: TextBlock
         // Unified synchronization
         private let stateLock = NSRecursiveLock()
@@ -21,7 +29,18 @@ enum StreamRenderer {
         
         // Constants
         private let minFrameInterval: CFTimeInterval = 1/60
- 
+
+        // Add parser state
+        // Enhanced parser state
+        private var _parserState: ParserState = .text
+        private var _languageBuffer = ""
+        private var _backtickBuffer = ""
+        private var _pendingBackticks = ""
+        
+        private var parserState: ParserState {
+            get { stateLock.withLock { _parserState } }
+            set { stateLock.withLock { _parserState = newValue } }
+        }
 
         // Thread-safe property access
         private var isAnimating: Bool {
@@ -39,8 +58,8 @@ enum StreamRenderer {
             set { stateLock.withLock { _codeBlockBuffer = newValue } }
         }
 
-        private func createCodeBlockDelimiter(language: String = "") -> NSMutableAttributedString {
-            let delimiterText = language.isEmpty ? "```\n" : "```\(language)\n"
+        private func createCodeBlockDelimiter(language: String = "", backticks: String = "```") -> NSMutableAttributedString {
+            let delimiterText = language.isEmpty ? "\(backticks)\n" : "\(backticks)\(language)\n"
             return NSMutableAttributedString(string: delimiterText, attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
                 .foregroundColor: NSColor.systemGray,
@@ -105,90 +124,244 @@ enum StreamRenderer {
         
         private func processChunk(_ chunk: String, isComplete: Bool) -> NSMutableAttributedString {
             return stateLock.withLock {
-                let update = NSMutableAttributedString()
+                var update = NSMutableAttributedString()
                 var remainingChunk = chunk
                 
-                // Handle existing code block content
-                if _isInCodeBlock {
-                    if let endRange = findCodeBlockEnd(in: remainingChunk) {
-                        // Content before closing ticks
-                        let codeContent = String(remainingChunk[..<endRange.lowerBound])
-                        _codeBlockBuffer += codeContent
-                        
-                        // Format the complete code block
-                        update.append(createCodeBlockDelimiter())
-                        update.append(createCodeBlockContent(_codeBlockBuffer))
-                        update.append(createCodeBlockDelimiter())
-                        
-                        // Reset state
-                        _codeBlockBuffer = ""
-                        _isInCodeBlock = false
-                        
-                        // Process remaining text
-                        remainingChunk = String(remainingChunk[endRange.upperBound...])
-                    } else {
-                        // No closing ticks found - buffer entire chunk
-                        _codeBlockBuffer += remainingChunk
-                        return NSMutableAttributedString()
-                    }
-                }
+                // Normalize whitespace and newlines first
+                remainingChunk = remainingChunk
+                    .replacingOccurrences(of: "\r\n", with: "\n")
+                    .replacingOccurrences(of: "\r", with: "\n")
                 
-                // Process remaining text for new code blocks
-                // Process remaining text for new code blocks using improved regex detection
                 while !remainingChunk.isEmpty {
-                    if let match = findCompleteCodeBlock(in: remainingChunk) {
-                        // Add text before code block
-                        let textBefore = String(remainingChunk[..<match.range.lowerBound])
-                        if !textBefore.isEmpty {
-                            update.append(processInlineText(textBefore))
-                        }
-                        
-                        // Add the complete code block
-                        update.append(createCodeBlockDelimiter(language: match.language))
-                        update.append(createCodeBlockContent(match.content))
-                        update.append(createCodeBlockDelimiter())
-                        
-                        // Skip processed content
-                        remainingChunk = String(remainingChunk[match.range.upperBound...])
-                    } 
-                    else if let (startRange, language) = findCodeBlockStart(in: remainingChunk) {
-                        // Handle partial code block (start found but no end)
-                        let textBefore = String(remainingChunk[..<startRange.lowerBound])
-                        if !textBefore.isEmpty {
-                            update.append(processInlineText(textBefore))
-                        }
-                        
-                        _isInCodeBlock = true
-                        update.append(createCodeBlockDelimiter(language: language))
-                        
-                        // Skip language specifier if present
-                        let contentStart = remainingChunk.index(startRange.lowerBound, offsetBy: 3 + language.count)
-                        _codeBlockBuffer = String(remainingChunk[contentStart...])
-                        remainingChunk = ""
-                    }
-                    else {
-                        // No code blocks - process as regular text
-                        update.append(processInlineText(remainingChunk))
-                        remainingChunk = ""
+                    switch parserState {
+                    case .text:
+                        processTextState(&remainingChunk, update: &update)
+                    case .potentialCodeBlockStart(let backticks):
+                        processPotentialStartState(&remainingChunk, backticks: backticks, update: &update)
+                    case .inCodeBlock(let language, let openingBackticks):
+                        processCodeBlockState(&remainingChunk, 
+                                            language: language, 
+                                            openingBackticks: openingBackticks, 
+                                            update: &update)
+                    case .potentialCodeBlockEnd(let backticks):
+                        processPotentialEndState(&remainingChunk, 
+                                               backticks: backticks, 
+                                               update: &update)
                     }
                 }
                 
-                // Handle incomplete code block at stream end
-                if isComplete && _isInCodeBlock {
-                    update.append(createCodeBlockContent(_codeBlockBuffer))
-                    update.append(createCodeBlockDelimiter())
-                    _codeBlockBuffer = ""
-                    _isInCodeBlock = false
+                if isComplete {
+                    finalizeIncompleteBlocks(update: &update)
                 }
                 
                 return update
             }
         }
 
+
+        private func processTextState(_ chunk: inout String, update: inout NSMutableAttributedString) {
+            guard let backtickIndex = chunk.firstIndex(of: "`") else {
+                update.append(processInlineText(chunk))
+                chunk = ""
+                return
+            }
+            
+            // Add text before backticks
+            let textBefore = String(chunk[..<backtickIndex])
+            if !textBefore.isEmpty {
+                update.append(processInlineText(textBefore))
+            }
+            
+            // Process backticks
+            let remaining = String(chunk[backtickIndex...])
+            if let backtickCount = countConsecutiveBackticks(remaining), backtickCount >= 3 {
+                let backticks = String(remaining.prefix(backtickCount))
+                parserState = .potentialCodeBlockStart(backticks: backticks)
+                chunk = String(remaining.dropFirst(backtickCount))
+            } else {
+                // Handle inline code
+                update.append(processInlineText(remaining))
+                chunk = ""
+            }
+        }
+        
+        private func processPotentialStartState(_ chunk: inout String, 
+                                              backticks: String, 
+                                              update: inout NSMutableAttributedString) {
+            // Look for newline or end of chunk
+            if let newlineIndex = chunk.firstIndex(of: "\n") {
+                // Extract language (sanitizing non-ASCII chars)
+                let languagePart = String(chunk[..<newlineIndex])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .unicodeScalars.filter { $0.isPrintableASCII }
+                    .map { String($0) }
+                    .joined()
+                
+                // Transition to code block state
+                parserState = .inCodeBlock(language: languagePart, openingBackticks: backticks)
+                update.append(createCodeBlockDelimiter(language: languagePart, backticks: backticks))
+                
+                // Remove processed part
+                chunk = String(chunk[chunk.index(after: newlineIndex)...])
+                _languageBuffer = ""
+            } else {
+                // Buffer potential language specifier with timeout
+                _languageBuffer += chunk
+                chunk = ""
+                
+                if _languageBuffer.count > 100 { // Timeout threshold
+                    update.append(processInlineText(backticks + _languageBuffer))
+                    _languageBuffer = ""
+                    parserState = .text
+                }
+            }
+        }
+        
+        private func processCodeBlockState(_ chunk: inout String, 
+                                         language: String, 
+                                         openingBackticks: String, 
+                                         update: inout NSMutableAttributedString) {
+            // Look for closing backticks
+            if let (endRange, foundBackticks) = findPotentialCodeBlockEnd(in: chunk, 
+                                                                        openingBackticks: openingBackticks) {
+                // Content before closing ticks
+                let content = String(chunk[..<endRange.lowerBound])
+                _codeBlockBuffer += content
+                
+                // Format the complete code block with proper spacing
+                update.append(createCodeBlockContent(_codeBlockBuffer))
+                update.append(createCodeBlockDelimiter(backticks: foundBackticks))
+                
+                // Reset state
+                _codeBlockBuffer = ""
+                parserState = .text
+                
+                // Process remaining text with proper newlines
+                chunk = String(chunk[endRange.upperBound...])
+                if !chunk.isEmpty && !chunk.hasPrefix("\n") {
+                    update.append(createRegularText("\n"))
+                }
+            } else {
+                // Buffer content preserving original formatting
+                _codeBlockBuffer += chunk
+                chunk = ""
+            }
+        }
+        
+        private func processPotentialEndState(_ chunk: inout String, 
+                                            backticks: String, 
+                                            update: inout NSMutableAttributedString) {
+            let neededTicks = max(3, backticks.count) - backticks.count
+            
+            if chunk.count >= neededTicks {
+                let additionalTicks = String(chunk.prefix(neededTicks))
+                if additionalTicks.allSatisfy({ $0 == "`" }) {
+                    // Complete the closing fence
+                    let completeBackticks = backticks + additionalTicks
+                    update.append(createCodeBlockContent(_codeBlockBuffer))
+                    update.append(createCodeBlockDelimiter(backticks: completeBackticks))
+                    
+                    // Reset state
+                    _codeBlockBuffer = ""
+                    parserState = .text
+                    
+                    // Process remaining text
+                    chunk = String(chunk.dropFirst(neededTicks))
+                    return
+                }
+            }
+            
+            // Not complete - revert to code block state
+            _codeBlockBuffer += backticks + chunk
+            chunk = ""
+            parserState = .inCodeBlock(language: _languageBuffer, openingBackticks: _pendingBackticks)
+        }
+        
+        private func finalizeIncompleteBlocks(update: inout NSMutableAttributedString) {
+            switch parserState {
+            case .inCodeBlock(_, let openingBackticks):
+                // Force close the block
+                update.append(createCodeBlockContent(_codeBlockBuffer))
+                update.append(createCodeBlockDelimiter(backticks: openingBackticks))
+                
+            case .potentialCodeBlockStart(let backticks):
+                // Treat as text
+                update.append(processInlineText(backticks + _languageBuffer))
+                
+            case .potentialCodeBlockEnd(let backticks):
+                // Treat as text
+                update.append(processInlineText(backticks))
+                
+            default:
+                break
+            }
+            
+            // Reset all buffers
+            _codeBlockBuffer = ""
+            _languageBuffer = ""
+            _pendingBackticks = ""
+            parserState = .text
+        }
+
+        private func countConsecutiveBackticks(_ text: String) -> Int? {
+            guard let first = text.first, first == "`" else { return nil }
+            return text.prefix { $0 == "`" }.count
+        }
+        
+        // MARK: - Helper Methods
+        
+        // Thread-safe version using NSString
+        // MARK: - Enhanced Code Block Detection
+        private func findPotentialCodeBlockEnd(in text: String, openingBackticks: String) -> (Range<String.Index>, String)? {
+            let minBackticks = max(3, openingBackticks.count)
+            let pattern = #"(?:(?:^|\n)[ ]{0,3})(`{\#(minBackticks),})(?=\s|$)"#
+            
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let ticksRange = Range(match.range(at: 1), in: text) else {
+                return nil
+            }
+            
+            let backticks = String(text[ticksRange])
+            return (ticksRange, backticks)
+        }
+
         private struct CodeBlockMatch {
             let range: Range<String.Index>
             let language: String
             let content: String
+        }
+
+        private func findPartialCodeBlockEnd(in text: String, openingBackticks: String) -> String? {
+            let minBackticks = max(3, openingBackticks.count)
+            let partialTicks = text.prefix(minBackticks).filter { $0 == "`" }
+            return partialTicks.count >= 1 ? String(partialTicks) : nil
+        }
+
+        // MARK: - Nested Fence Handling (Optional)
+        private func handleNestedFences(in content: String, openingBackticks: String) -> String {
+            let fenceCount = openingBackticks.count
+            let nestedPattern = #"(^|\n)(`{3,})(?=\n|$)"#
+            
+            guard fenceCount > 3,
+                  let regex = try? NSRegularExpression(pattern: nestedPattern) else {
+                return content
+            }
+            
+            var processed = content
+            let matches = regex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+            
+            for match in matches.reversed() {
+                if let range = Range(match.range(at: 2), in: content) {
+                    let ticks = String(content[range])
+                    if ticks.count >= fenceCount {
+                        // Escape inner fences by adding one more backtick
+                        processed.replaceSubrange(range, with: ticks + "`")
+                    }
+                }
+            }
+            
+            return processed
         }
 
         private func findCompleteCodeBlock(in text: String) -> CodeBlockMatch? {
@@ -334,63 +507,58 @@ enum StreamRenderer {
         }
         
         private func createCodeBlockContent(_ text: String) -> NSMutableAttributedString {
-            // Clean up the code content
+            // Preserve original formatting but fix common issues
             let cleanedText = text
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "\t", with: "    ") // Convert tabs to spaces
+                .replacingOccurrences(of: "\t", with: "    ")
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
             
-            let content = NSMutableAttributedString(string: cleanedText + "\n", attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
-                .foregroundColor: NSColor.textColor,
-                .backgroundColor: NSColor.controlBackgroundColor,
-                .paragraphStyle: {
-                    let style = NSMutableParagraphStyle()
-                    style.lineHeightMultiple = 1.2
-                    style.paragraphSpacing = 4
-                    return style
-                }()
-            ])
-            return content
+            return NSMutableAttributedString(string: cleanedText, attributes: codeBlockAttributes)
         }
         
+        // MARK: - Enhanced Inline Code Handling
         private func processInlineText(_ text: String) -> NSMutableAttributedString {
             let result = NSMutableAttributedString(string: text, attributes: regularAttributes)
+            let pattern = "`([^`]+)`"
             
-            // Only process backticks if they come in pairs
-            let backtickCount = text.filter { $0 == "`" }.count
-            guard backtickCount >= 2 && backtickCount % 2 == 0 else {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else {
                 return result
             }
             
-            var backtickRanges = [Range<String.Index>]()
-            var currentIndex = text.startIndex
-            
-            // Find all backtick pairs
-            while let range = text.range(of: "`", range: currentIndex..<text.endIndex) {
-                backtickRanges.append(range)
-                currentIndex = range.upperBound
-            }
-            
-            // Apply formatting to text between backtick pairs
-            for i in stride(from: 0, to: backtickRanges.count, by: 2) {
-                if i+1 >= backtickRanges.count { break }
-                
-                let start = backtickRanges[i].upperBound
-                let end = backtickRanges[i+1].lowerBound
-                let codeRange = NSRange(start..<end, in: text)
-                
-                if codeRange.location != NSNotFound {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            for match in matches.reversed() { // Process backwards to avoid range issues
+                if match.range.location != NSNotFound && match.range.length > 0 {
+                    let codeRange = match.range(at: 1) // Get the content inside backticks
                     result.setAttributes(inlineCodeAttributes, range: codeRange)
                     
-                    // Remove the backticks themselves from display
-                    let openingRange = NSRange(backtickRanges[i], in: text)
-                    let closingRange = NSRange(backtickRanges[i+1], in: text)
-                    result.replaceCharacters(in: closingRange, with: "")
-                    result.replaceCharacters(in: openingRange, with: "")
+                    // Remove the backticks themselves
+                    result.replaceCharacters(in: match.range, with: result.attributedSubstring(from: codeRange))
                 }
             }
             
             return result
+        }
+
+        // MARK: - Language Validation
+        private static let validLanguages: Set<String> = [
+            "swift", "python", "javascript", "typescript", "java", 
+            "kotlin", "c", "cpp", "csharp", "go", "ruby", "php",
+            "rust", "scala", "dart", "r", "objectivec", "bash", "sh",
+            "json", "yaml", "xml", "html", "css", "markdown", "text"
+        ]
+
+        private func normalizeLanguage(_ language: String) -> String {
+            // Remove non-ASCII and normalize
+            let asciiOnly = language.unicodeScalars
+                .filter { $0.isPrintableASCII }
+                .map { String($0) }
+                .joined()
+            
+            // Optional: Whitelist validation
+            if Self.validLanguages.contains(asciiOnly.lowercased()) {
+                return asciiOnly.lowercased()
+            }
+            return asciiOnly
         }
     }
 
@@ -687,26 +855,10 @@ extension String {
     }
 }
 
-// extension String {
-//     func normalizeMarkdownCodeBlocks() -> String {
-//         var result = self
-        
-//         // Fix common malformed code block patterns
-//         let patterns = [
-//             #"(?<!\n)(```)(\w*)\n"#: "```$2\n", // Fix missing newline after ```
-//             #"```(\w+)[^\S\n]+(\n)"#: "```$1$2", // Fix extra spaces after language
-//             #"```\n+```"#: "```\n```", // Fix excessive newlines
-//             #"`{1,2}([^`\n]+)`{1,2}"#: "`$1`" // Normalize inline code ticks
-//         ]
-        
-//         for (pattern, replacement) in patterns {
-//             result = result.replacingOccurrences(
-//                 of: pattern,
-//                 with: replacement,
-//                 options: .regularExpression
-//             )
-//         }
-        
-//         return result
-//     }
-// }
+
+// Add this extension at the top level of your file (not inside any class/struct)
+extension Unicode.Scalar {
+    var isPrintableASCII: Bool {
+        return value >= 32 && value <= 126  // ASCII printable range
+    }
+}
