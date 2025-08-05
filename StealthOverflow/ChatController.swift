@@ -16,70 +16,10 @@ class ChatController {
         set { controllerAccessQueue.async(flags: .barrier) { self._currentStreamingTextController = newValue } }
     }
 
-    private var assistantResponseBuffer = NSMutableAttributedString()
-
-    private var isInCodeBlock = false
-    private var codeBlockBuffer = ""
-
     init(messagesStack: NSStackView, textView: NSTextView, inputHeightConstraint: NSLayoutConstraint?) {
         self.messagesStack = messagesStack
         self.textView = textView
         self.inputHeightConstraint = inputHeightConstraint
-    }
-    private func processChunk(_ chunk: String) {
-        let remainingChunk = chunk
-        
-        if isInCodeBlock {
-            if let closingRange = remainingChunk.range(of: "```") {
-                // Found closing ```
-                let codeContent = remainingChunk[..<closingRange.lowerBound]
-                codeBlockBuffer += codeContent
-                
-                // Force as code block if we were in code block mode
-                assistantResponseBuffer.append(NSAttributedString(string: "```\n" + codeBlockBuffer + "\n```"))
-                codeBlockBuffer = ""
-                isInCodeBlock = false
-                
-                // Process remaining text
-                let remainingText = String(remainingChunk[closingRange.upperBound...])
-                if !remainingText.isEmpty {
-                    assistantResponseBuffer.append(NSAttributedString(string: remainingText))
-                }
-            } else {
-                codeBlockBuffer += remainingChunk
-            }
-        } else {
-            // First check for triple backticks
-            if let openingRange = remainingChunk.range(of: "```") {
-                // Check if it's really triple (not inline)
-                let potentialTriple = remainingChunk[openingRange.lowerBound...]
-                if potentialTriple.count >= 3 && potentialTriple.starts(with: "```") {
-                    // Handle code block
-                    let textBefore = remainingChunk[..<openingRange.lowerBound]
-                    if !textBefore.isEmpty {
-                        assistantResponseBuffer.append(NSAttributedString(string: String(textBefore)))
-                    }
-                    
-                    isInCodeBlock = true
-                    codeBlockBuffer = ""
-                    
-                    let afterTicks = remainingChunk.index(openingRange.lowerBound, offsetBy: 3)
-                    let remaining = String(remainingChunk[afterTicks...])
-                    if !remaining.isEmpty {
-                        processStreamChunk(remaining)
-                    }
-                    return
-                }
-            }
-            
-            // Handle inline code
-            let processed = remainingChunk.replacingOccurrences(
-                of: "`([^`]+)`",
-                with: "`$1`",
-                options: .regularExpression
-            )
-            assistantResponseBuffer.append(NSAttributedString(string: processed))
-        }
     }
 
     func handleInput() {
@@ -122,48 +62,43 @@ class ChatController {
             guard let self = self else { return }
             
             if chunk == "[STREAM_DONE]" {
-                // self.handleStreamCompletion()
-                // return
+                self.handleStreamCompletion()
+                return
             }
-            self.processChunk(chunk)
             
             // Safely get controller reference
-            if self.currentStreamingTextController == nil {
+            let controller = self.currentStreamingTextController
+            
+            if controller == nil {
                 self.initializeStreamingController()
+                // Get new controller reference after initialization
+                self.currentStreamingTextController?.appendStreamingText(chunk)
+                return
             }
             
             self.typingIndicator?.removeFromSuperview()
             self.typingIndicator = nil
             
             // Thread-safe append with main thread guarantee
-            self.currentStreamingTextController?.appendStreamingText(self.assistantResponseBuffer.string, isComplete: false)
+            controller?.appendStreamingText(chunk)
         }
     }
 
     private func handleStreamCompletion() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-             // Get the current controller strongly
-            guard let controller = self.currentStreamingTextController else {
-                self.typingIndicator?.removeFromSuperview()
-                self.typingIndicator = nil
-                return
-            }
             
-            // Send the final accumulated text
-            controller.appendStreamingText(self.assistantResponseBuffer.string, isComplete: true)
-            
-            // Clear the local buffer after sending
-            self.assistantResponseBuffer = NSMutableAttributedString()
+            // Capture controller reference strongly for this operation
+            let controller = self.currentStreamingTextController
+            controller?.appendStreamingText("", isComplete: true)
             
             self.typingIndicator?.removeFromSuperview()
             self.typingIndicator = nil
             
-             // Delayed cleanup with identity check
+            // Delayed cleanup with identity check
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak controller] in
-                guard let self = self else { return }
-                if let currentController = self.currentStreamingTextController, currentController === controller {
-                    self.currentStreamingTextController = nil
+                if let current = self?.currentStreamingTextController, current === controller {
+                    self?.currentStreamingTextController = nil
                 }
             }
         }

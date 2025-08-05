@@ -11,16 +11,13 @@ enum StreamRenderer {
         private let stateLock = NSRecursiveLock()
         private let processingQueue = DispatchQueue(label: "stream.processor", qos: .userInteractive)
         private var displayLink: DisplayLink?
-        private var lastProcessedLength: Int = 0
         
         // Protected state
         private var _isAnimating = false
         private var _fullTextBuffer = NSMutableAttributedString()
         private var _isInCodeBlock = false
-        private var _lastDisplayedLength = 0
         private var _codeBlockBuffer = ""
         private var _lastRenderTime: CFTimeInterval = 0
-        private var _lastProcessedChunk: String = ""
         
         // Constants
         private let minFrameInterval: CFTimeInterval = 1/60
@@ -80,100 +77,146 @@ enum StreamRenderer {
             .baselineOffset: 0
         ]
 
-        struct MessageSegment {
-            let content: String
-            let isCode: Bool
-        }
-
-        static func splitMarkdown(_ text: String) -> [MessageSegment] {
-            var segments: [MessageSegment] = []
-            var current = ""
-            var insideCodeBlock = false
-
-            let lines = text.components(separatedBy: .newlines)
-
-            for line in lines {
-                if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                    if insideCodeBlock {
-                        segments.append(.init(content: current, isCode: true))
-                        current = ""
-                    } else {
-                        if !current.isEmpty {
-                            segments.append(.init(content: current, isCode: false))
-                            current = ""
-                        }
-                    }
-                    insideCodeBlock.toggle()
-                    continue
-                }
-
-                current += line + "\n"
-            }
-
-            if !current.isEmpty {
-                segments.append(.init(content: current, isCode: insideCodeBlock))
-            }
-
-            return segments 
-        }
-
         init(textBlock: TextBlock) {
             self.textBlock = textBlock
         }
-
         
-        func clear() {
-            stateLock.withLock {
-                _fullTextBuffer = NSMutableAttributedString()
-                _lastDisplayedLength = 0
-                _lastProcessedChunk = ""
-                _isInCodeBlock = false
-                _codeBlockBuffer = ""
-                
-                // Don't clear the text view - it should maintain its content
-                // Removed: self?.textBlock.textView.string = ""
-            }
-        }
-
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
+            // Capture strong reference to textBlock
+            let textBlock = self.textBlock
+            
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
                 
-                self.stateLock.withLock {
-                     DispatchQueue.main.async {
-                        guard self.textBlock.superview != nil else { return }
-
-                        let segments = Self.splitMarkdown(chunk)
-                        for segment in segments {
-                            if segment.isCode {
-                                print("YES ITS A CODE")
-                            //  Call CodeBlock which has seperate UI with the textBlockview.
-                            } else {
-                                let formatted = self.formatSegments(segments)
-                                self.textBlock.updateFullText(formatted)
-                            }
-                        }
+                let cleanedChunk = chunk.cleanedForStream()
+                guard !cleanedChunk.isEmpty || isComplete else { return }
+                
+                let update = self.processChunk(cleanedChunk, isComplete: isComplete)
+                
+                // Ensure UI updates on main thread
+                DispatchQueue.main.async {
+                    // Verify textBlock still exists
+                    guard textBlock.superview != nil else { return }
+                    
+                    self.commitUpdate(update, isComplete: isComplete)
+                }
+            }
+        }
+        
+        private func processChunk(_ chunk: String, isComplete: Bool) -> NSMutableAttributedString {
+            return stateLock.withLock {
+                let update = NSMutableAttributedString()
+                var remainingChunk = chunk
+                
+                // Handle existing code block content
+                if _isInCodeBlock {
+                    if let endRange = remainingChunk.range(of: "```") {
+                        // Content before closing ticks
+                        let codeContent = String(remainingChunk[..<endRange.lowerBound])
+                        _codeBlockBuffer += codeContent
+                        
+                        // Format the complete code block
+                        update.append(createCodeBlockDelimiter())
+                        update.append(createCodeBlockContent(_codeBlockBuffer))
+                        update.append(createCodeBlockDelimiter())
+                        
+                        // Reset state
+                        _codeBlockBuffer = ""
+                        _isInCodeBlock = false
+                        
+                        // Process remaining text
+                        remainingChunk = String(remainingChunk[endRange.upperBound...])
+                    } else {
+                        // No closing ticks found - buffer entire chunk
+                        _codeBlockBuffer += remainingChunk
+                        return NSMutableAttributedString()
                     }
                 }
-            }
-        }
-
-        private func formatSegments(_ segments: [MessageSegment]) -> NSAttributedString {
-            let result = NSMutableAttributedString()
-            for segment in segments {
-                if segment.isCode {
-                    result.append(createCodeBlockDelimiter())
-                    result.append(createCodeBlockContent(segment.content))
-                    result.append(createCodeBlockDelimiter())
-                } else {
-                    result.append(NSAttributedString(
-                        string: segment.content,
-                        attributes: regularAttributes
-                    ))
+                
+                // Process remaining text for new code blocks
+                while !remainingChunk.isEmpty {
+                    if let startRange = remainingChunk.range(of: "```") {
+                        // Add text before code block
+                        let textBefore = String(remainingChunk[..<startRange.lowerBound])
+                        if !textBefore.isEmpty {
+                            update.append(processInlineText(textBefore))
+                        }
+                        
+                        // Start new code block
+                        _isInCodeBlock = true
+                        update.append(createCodeBlockDelimiter())
+                        
+                        // Check for language specifier (e.g., ```java)
+                        let afterTicks = remainingChunk.index(startRange.lowerBound, offsetBy: 3)
+                        let potentialLanguage = remainingChunk[afterTicks...]
+                            .prefix(while: { !$0.isNewline })
+                            .trimmingCharacters(in: .whitespaces)
+                        
+                        // Skip language specifier if present
+                        let contentStart = potentialLanguage.isEmpty ? afterTicks :
+                            remainingChunk.index(afterTicks, offsetBy: potentialLanguage.count)
+                        remainingChunk = String(remainingChunk[contentStart...])
+                        
+                        // Look for closing ticks in same chunk
+                        if let endRange = remainingChunk.range(of: "```") {
+                            let codeContent = String(remainingChunk[..<endRange.lowerBound])
+                            _codeBlockBuffer = codeContent
+                            
+                            update.append(createCodeBlockContent(_codeBlockBuffer))
+                            update.append(createCodeBlockDelimiter())
+                            
+                            _codeBlockBuffer = ""
+                            _isInCodeBlock = false
+                            remainingChunk = String(remainingChunk[endRange.upperBound...])
+                        } else {
+                            // No closing ticks - buffer remaining content
+                            _codeBlockBuffer = remainingChunk
+                            remainingChunk = ""
+                        }
+                    } else {
+                        // No code blocks - process as regular text
+                        update.append(processInlineText(remainingChunk))
+                        remainingChunk = ""
+                    }
                 }
-            }
-            return result
+                
+                // Handle incomplete code block at stream end
+                if isComplete && _isInCodeBlock {
+                    update.append(createCodeBlockContent(_codeBlockBuffer))
+                    update.append(createCodeBlockDelimiter())
+                    _codeBlockBuffer = ""
+                    _isInCodeBlock = false
+                }
+                
+                return update
         }
+    }
+        
+        private func commitUpdate(_ update: NSMutableAttributedString, isComplete: Bool) {
+               stateLock.withLock {
+                   _fullTextBuffer.append(update)
+                   let bufferCopy = _fullTextBuffer.copy() as! NSAttributedString
+                   
+                   DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        
+                        // Prevent animation during streaming
+                        NSAnimationContext.beginGrouping()
+                        NSAnimationContext.current.duration = 0
+                        NSAnimationContext.current.allowsImplicitAnimation = false
+                        
+                        self.textBlock.updateFullText(bufferCopy)
+                        
+                        NSAnimationContext.endGrouping()
+                        
+                        if isComplete {
+                            self.stop()
+                        } else {
+                            self.startDisplayLinkIfNeeded()
+                        }
+                    }
+               }
+           }
         
         private func startDisplayLinkIfNeeded() {
             stateLock.withLock {
@@ -203,15 +246,28 @@ enum StreamRenderer {
                 self.textBlock.updateFullText(bufferCopy)
             }
         }
-    }
-        
-    private func stop() {
-        stateLock.withLock {
-            _isAnimating = false
-            displayLink?.stop()
-            displayLink = nil
         }
-    }
+        
+        private func stop() {
+            stateLock.withLock {
+                _isAnimating = false
+                displayLink?.stop()
+                displayLink = nil
+            }
+        }
+        
+        func clear() {
+            stateLock.withLock {
+                _fullTextBuffer = NSMutableAttributedString()
+                _isInCodeBlock = false
+                _codeBlockBuffer = ""
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.textBlock.textView.string = ""
+                    self?.textBlock.updateHeight()
+                }
+            }
+        }
         
         // Helper methods
         private func createRegularText(_ text: String) -> NSMutableAttributedString {
@@ -267,7 +323,7 @@ enum StreamRenderer {
                 if codeRange.location != NSNotFound {
                     result.setAttributes(inlineCodeAttributes, range: codeRange)
                     
-                        // Remove the backticks themselves from display
+                    // Remove the backticks themselves from display
                     let openingRange = NSRange(backtickRanges[i], in: text)
                     let closingRange = NSRange(backtickRanges[i+1], in: text)
                     result.replaceCharacters(in: closingRange, with: "")
@@ -276,36 +332,6 @@ enum StreamRenderer {
             }
             
             return result
-        }
-    }
-
-    final class CodeBlock: TextBlock {
-        private let backgroundColor = NSColor(white: 0.1, alpha: 1.0)
-
-        init(code: String, maxWidth: CGFloat) {
-            super.init(maxWidth: maxWidth)
-
-            // Configure code-specific appearance
-            textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-            textView.textColor = NSColor.white
-            textView.backgroundColor = backgroundColor
-            textView.drawsBackground = true
-
-            textView.textContainerInset = NSSize(width: 12, height: 12)
-
-            updateFullText(NSAttributedString(string: code))
-        }
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
-        override func setupTextView() {
-            super.setupTextView()
-            
-            // Add rounded corners
-            textView.wantsLayer = true
-            textView.layer?.cornerRadius = 6
-            textView.layer?.masksToBounds = true
         }
     }
 
@@ -383,7 +409,7 @@ enum StreamRenderer {
             fatalError("init(coder:) has not been implemented")
         }
 
-        func setupTextView() {
+        private func setupTextView() {
             textView.translatesAutoresizingMaskIntoConstraints = false
             textView.isEditable = false
             textView.isSelectable = true
@@ -392,7 +418,6 @@ enum StreamRenderer {
             textView.textContainer?.lineFragmentPadding = 0
             textView.textContainer?.widthTracksTextView = true
             textView.isHorizontallyResizable = false
-            textView.layoutManager?.allowsNonContiguousLayout = false
             
             addSubview(textView)
             
@@ -408,7 +433,6 @@ enum StreamRenderer {
         func updateFullText(_ text: NSAttributedString) {
             assert(Thread.isMainThread, "Text updates must be on main thread")
             guard let storage = textView.textStorage else { return }
-            print("text -> \(text)")
             
             storage.beginEditing()
             storage.setAttributedString(text)
