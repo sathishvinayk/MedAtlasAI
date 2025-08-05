@@ -122,8 +122,8 @@ class ChatController {
             guard let self = self else { return }
             
             if chunk == "[STREAM_DONE]" {
-                self.handleStreamCompletion()
-                return
+                // self.handleStreamCompletion()
+                // return
             }
             self.processChunk(chunk)
             

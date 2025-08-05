@@ -140,40 +140,18 @@ enum StreamRenderer {
                 guard let self = self else { return }
                 
                 self.stateLock.withLock {
-                    // Calculate the new text by finding the difference from last chunk
-                    let newText: String
-                    if chunk.hasPrefix(self._lastProcessedChunk) {
-                        let startIndex = chunk.index(chunk.startIndex, offsetBy: self._lastProcessedChunk.count)
-                        newText = String(chunk[startIndex...])
-                    } else {
-                        // If prefix doesn't match, use whole chunk (fallback)
-                        newText = chunk
-                    }
-                    
-                    // Update the last processed chunk
-                    self._lastProcessedChunk = chunk
-                    
-                    // Append to buffer
-                    self._fullTextBuffer.append(NSAttributedString(
-                        string: newText,
-                        attributes: self.regularAttributes
-                    ))
-                    
                      DispatchQueue.main.async {
                         guard self.textBlock.superview != nil else { return }
-                        
-                        if isComplete {
-                            // Final render with markdown processing
-                            let segments = Self.splitMarkdown(self._fullTextBuffer.string)
-                            let formatted = self.formatSegments(segments)
-                            self.textBlock.updateFullText(formatted)
-                        } else {
-                            // For streaming, append only the new text
-                            self.textBlock.textView.textStorage?.append(NSAttributedString(
-                                string: newText,
-                                attributes: self.regularAttributes
-                            ))
-                            self.textBlock.updateHeight()
+
+                        let segments = Self.splitMarkdown(chunk)
+                        for segment in segments {
+                            if segment.isCode {
+                                print("YES ITS A CODE")
+                            //  Call CodeBlock which has seperate UI with the textBlockview.
+                            } else {
+                                let formatted = self.formatSegments(segments)
+                                self.textBlock.updateFullText(formatted)
+                            }
                         }
                     }
                 }
@@ -289,7 +267,7 @@ enum StreamRenderer {
                 if codeRange.location != NSNotFound {
                     result.setAttributes(inlineCodeAttributes, range: codeRange)
                     
-                    // Remove the backticks themselves from display
+                        // Remove the backticks themselves from display
                     let openingRange = NSRange(backtickRanges[i], in: text)
                     let closingRange = NSRange(backtickRanges[i+1], in: text)
                     result.replaceCharacters(in: closingRange, with: "")
@@ -298,6 +276,36 @@ enum StreamRenderer {
             }
             
             return result
+        }
+    }
+
+    final class CodeBlock: TextBlock {
+        private let backgroundColor = NSColor(white: 0.1, alpha: 1.0)
+
+        init(code: String, maxWidth: CGFloat) {
+            super.init(maxWidth: maxWidth)
+
+            // Configure code-specific appearance
+            textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            textView.textColor = NSColor.white
+            textView.backgroundColor = backgroundColor
+            textView.drawsBackground = true
+
+            textView.textContainerInset = NSSize(width: 12, height: 12)
+
+            updateFullText(NSAttributedString(string: code))
+        }
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func setupTextView() {
+            super.setupTextView()
+            
+            // Add rounded corners
+            textView.wantsLayer = true
+            textView.layer?.cornerRadius = 6
+            textView.layer?.masksToBounds = true
         }
     }
 
@@ -375,7 +383,7 @@ enum StreamRenderer {
             fatalError("init(coder:) has not been implemented")
         }
 
-        private func setupTextView() {
+        func setupTextView() {
             textView.translatesAutoresizingMaskIntoConstraints = false
             textView.isEditable = false
             textView.isSelectable = true
