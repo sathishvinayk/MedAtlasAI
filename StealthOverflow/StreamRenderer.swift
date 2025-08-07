@@ -168,6 +168,20 @@ enum StreamRenderer {
             }
         }
 
+        private func findClosingBackticks(in text: String, openingBackticks: String) -> (Range<String.Index>, String)? {
+            let minBackticks = max(3, openingBackticks.count)
+            let pattern = #"(?:^|\n)(`{\#(minBackticks),})(?=\s|$)"#
+            
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                let ticksRange = Range(match.range(at: 1), in: text) else {
+                return nil
+            }
+            
+            let backticks = String(text[ticksRange])
+            return (ticksRange, backticks)
+        }
+
         private func processLine(_ line: String) -> NSAttributedString {
             let output = NSMutableAttributedString()
             var remainingLine = line
@@ -204,17 +218,15 @@ enum StreamRenderer {
                         let languagePart = String(remainingLine[..<newlineIndex])
                         let validatedLanguage = validateAndAutocorrectLanguage(languagePart)
                         
-                        // Create the opening delimiter (don't append yet)
-                        let openingDelimiter = createCodeBlockDelimiter(
+                        // Create the opening delimiter (not added to output yet)
+                        _pendingDelimiter = createCodeBlockDelimiter(
                             backticks: backticks,
                             language: validatedLanguage
                         )
                         
-                        // Store for when we have the full code block
-                        _pendingDelimiter = openingDelimiter
-                        
-                        parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
+                        // Skip past the language and newline
                         remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
+                        parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
                     } else {
                         _languageBuffer += remainingLine
                         remainingLine = ""
@@ -222,29 +234,29 @@ enum StreamRenderer {
                     
                 case .inCodeBlock(let language, let openingBackticks):
                     if let (endRange, foundBackticks) = findClosingBackticks(in: remainingLine, openingBackticks: openingBackticks) {
-                        // Get the code content
-                        let content = String(remainingLine[..<endRange.lowerBound])
-                        
                         // Create the complete code block
                         let codeBlock = NSMutableAttributedString()
                         
-                        // Add the opening delimiter we stored earlier
+                        // 1. Add opening delimiter if we have one
                         if let delimiter = _pendingDelimiter {
                             codeBlock.append(delimiter)
                             _pendingDelimiter = nil
                         }
                         
-                        // Add the code content
+                        // 2. Add ONLY the code content (exclude closing backticks)
+                        let content = String(remainingLine[..<endRange.lowerBound])
                         codeBlock.append(createCodeBlockContent(content))
                         
-                        // Add closing delimiter
+                        // 3. Add closing delimiter
                         codeBlock.append(createCodeBlockDelimiter(backticks: foundBackticks))
                         
                         output.append(codeBlock)
                         parserState = .text
+                        
+                        // Skip past the closing backticks
                         remainingLine = String(remainingLine[endRange.upperBound...])
                     } else {
-                        // Buffer content until we find closing backticks
+                        // No closing backticks found yet - add as code content
                         if let delimiter = _pendingDelimiter {
                             output.append(delimiter)
                             _pendingDelimiter = nil
@@ -353,21 +365,6 @@ enum StreamRenderer {
         private func countConsecutiveBackticks(_ text: String) -> Int? {
             guard let first = text.first, first == "`" else { return nil }
             return text.prefix { $0 == "`" }.count
-        }
-        
-        // MARK: - Cleaned Up Helper Methods
-        private func findClosingBackticks(in text: String, openingBackticks: String) -> (Range<String.Index>, String)? {
-            let minBackticks = max(3, openingBackticks.count)
-            let pattern = #"(?:^|\n)(`{\#(minBackticks),})(?=\s|$)"#
-            
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-                let ticksRange = Range(match.range(at: 1), in: text) else {
-                return nil
-            }
-            
-            let backticks = String(text[ticksRange])
-            return (ticksRange, backticks)
         }
         
         // Thread-safe version using NSString
