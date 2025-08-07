@@ -38,6 +38,7 @@ enum StreamRenderer {
         private var _languageBuffer = ""
         private var _pendingBackticks = ""
         private var _lineBuffer = ""
+        private var _pendingDelimiter: NSAttributedString?
         
 
         // Thread-safe property access
@@ -66,12 +67,17 @@ enum StreamRenderer {
             set { stateLock.withLock { _pendingBackticks = newValue } }
         }
         
-        private func createCodeBlockDelimiter(language: String = "", backticks: String = "```") -> NSAttributedString {
-            let delimiterText = language.isEmpty ? "\(backticks)\n" : "\(backticks)\(language)\n"
-            return NSAttributedString(string: delimiterText, attributes: [
+        private func createCodeBlockDelimiter(backticks: String, language: String = "") -> NSAttributedString {
+            let text = language.isEmpty ? "\(backticks)\n" : "\(backticks)\(language)\n"
+            return NSAttributedString(string: text, attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
                 .foregroundColor: NSColor.systemGray,
-                .backgroundColor: NSColor.controlBackgroundColor
+                .backgroundColor: NSColor.controlBackgroundColor,
+                .paragraphStyle: {
+                    let style = NSMutableParagraphStyle()
+                    style.paragraphSpacing = 0
+                    return style
+                }()
             ])
         }
         
@@ -82,7 +88,7 @@ enum StreamRenderer {
             .paragraphStyle: {
                 let style = NSMutableParagraphStyle()
                 style.lineHeightMultiple = 1.2
-                style.paragraphSpacing = 8
+                style.paragraphSpacing = 0  // Important for keeping blocks together
                 return style
             }()
         ]
@@ -167,11 +173,10 @@ enum StreamRenderer {
             var remainingLine = line
             
             while !remainingLine.isEmpty {
-                output.setAttributes(regularAttributes, range: NSRange(location: 0, length: output.length))
                 switch parserState {
                 case .text:
                     if let backtickIndex = remainingLine.firstIndex(of: "`") {
-                        // Add text before backticks
+                        // Process text before backticks
                         let textBefore = String(remainingLine[..<backtickIndex])
                         if !textBefore.isEmpty {
                             output.append(createRegularText(textBefore))
@@ -195,29 +200,55 @@ enum StreamRenderer {
                     }
                     
                 case .potentialCodeBlockStart(let backticks):
-                    // Look for newline to complete the code fence
                     if let newlineIndex = remainingLine.firstIndex(of: "\n") {
                         let languagePart = String(remainingLine[..<newlineIndex])
                         let validatedLanguage = validateAndAutocorrectLanguage(languagePart)
                         
-                        output.append(createCodeBlockDelimiter(language: validatedLanguage, backticks: backticks))
+                        // Create the opening delimiter (don't append yet)
+                        let openingDelimiter = createCodeBlockDelimiter(
+                            backticks: backticks,
+                            language: validatedLanguage
+                        )
+                        
+                        // Store for when we have the full code block
+                        _pendingDelimiter = openingDelimiter
+                        
                         parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
                         remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
                     } else {
-                        // Buffer potential language specifier
                         _languageBuffer += remainingLine
                         remainingLine = ""
                     }
                     
                 case .inCodeBlock(let language, let openingBackticks):
-                    // Look for closing fence
                     if let (endRange, foundBackticks) = findClosingBackticks(in: remainingLine, openingBackticks: openingBackticks) {
+                        // Get the code content
                         let content = String(remainingLine[..<endRange.lowerBound])
-                        output.append(createCodeBlockContent(content))
-                        output.append(createCodeBlockDelimiter(backticks: foundBackticks))
+                        
+                        // Create the complete code block
+                        let codeBlock = NSMutableAttributedString()
+                        
+                        // Add the opening delimiter we stored earlier
+                        if let delimiter = _pendingDelimiter {
+                            codeBlock.append(delimiter)
+                            _pendingDelimiter = nil
+                        }
+                        
+                        // Add the code content
+                        codeBlock.append(createCodeBlockContent(content))
+                        
+                        // Add closing delimiter
+                        codeBlock.append(createCodeBlockDelimiter(backticks: foundBackticks))
+                        
+                        output.append(codeBlock)
                         parserState = .text
                         remainingLine = String(remainingLine[endRange.upperBound...])
                     } else {
+                        // Buffer content until we find closing backticks
+                        if let delimiter = _pendingDelimiter {
+                            output.append(delimiter)
+                            _pendingDelimiter = nil
+                        }
                         output.append(createCodeBlockContent(remainingLine))
                         remainingLine = ""
                     }
@@ -237,6 +268,7 @@ enum StreamRenderer {
             
             return output
         }
+
         private func processInlineCode(_ text: String) -> NSAttributedString {
             let result = NSMutableAttributedString(string: text, attributes: regularAttributes) // Start with base attributes
             let pattern = "`([^`]+)`"
