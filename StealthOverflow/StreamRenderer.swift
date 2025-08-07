@@ -8,11 +8,25 @@ enum StreamRenderer {
     final class StreamMessageController {
 
         // MARK: - State Management
-        enum ParserState {
+        enum ParserState: Equatable {
             case text
             case potentialCodeBlockStart(backticks: String)
             case inCodeBlock(language: String, openingBackticks: String)
             case potentialCodeBlockEnd(backticks: String)
+            static func == (lhs: ParserState, rhs: ParserState) -> Bool {
+                switch (lhs, rhs) {
+                case (.text, .text):
+                    return true
+                case let (.potentialCodeBlockStart(lbackticks), .potentialCodeBlockStart(rbackticks)):
+                    return lbackticks == rbackticks
+                case let (.inCodeBlock(llang, lbackticks), .inCodeBlock(rlang, rbackticks)):
+                    return llang == rlang && lbackticks == rbackticks
+                case let (.potentialCodeBlockEnd(lbackticks), .potentialCodeBlockEnd(rbackticks)):
+                    return lbackticks == rbackticks
+                default:
+                    return false
+                }
+            }
         }
 
         let textBlock: TextBlock
@@ -144,6 +158,12 @@ enum StreamRenderer {
                 _lineBuffer = ""
                 
                 let output = NSMutableAttributedString()
+                        
+                // Special case: if text is completely plain, process immediately
+                if !remainingText.contains("`") && parserState == .text {
+                    output.append(createRegularText(remainingText))
+                    return output
+                }
                 
                 while !remainingText.isEmpty {
                     // Process complete lines only
@@ -185,10 +205,16 @@ enum StreamRenderer {
         private func processLine(_ line: String) -> NSAttributedString {
             let output = NSMutableAttributedString()
             var remainingLine = line
+
+            // Early return for completely plain text
+            if !remainingLine.contains("`") && parserState == .text {
+                return createRegularText(remainingLine)
+            }
             
             while !remainingLine.isEmpty {
                 switch parserState {
                 case .text:
+                    print("Text \(remainingLine)")
                     if let backtickIndex = remainingLine.firstIndex(of: "`") {
                         // Process text before backticks
                         let textBefore = String(remainingLine[..<backtickIndex])
