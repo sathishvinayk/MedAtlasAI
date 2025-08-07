@@ -99,7 +99,7 @@ enum StreamRenderer {
         ]
 
         private let inlineCodeAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 18, weight: .regular),
+            .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
             .foregroundColor: NSColor.systemOrange,
             .backgroundColor: NSColor.controlBackgroundColor.withAlphaComponent(0.3),
             .baselineOffset: 0
@@ -167,6 +167,7 @@ enum StreamRenderer {
             var remainingLine = line
             
             while !remainingLine.isEmpty {
+                output.setAttributes(regularAttributes, range: NSRange(location: 0, length: output.length))
                 switch parserState {
                 case .text:
                     if let backtickIndex = remainingLine.firstIndex(of: "`") {
@@ -236,9 +237,8 @@ enum StreamRenderer {
             
             return output
         }
-
         private func processInlineCode(_ text: String) -> NSAttributedString {
-            let result = NSMutableAttributedString(string: text)
+            let result = NSMutableAttributedString(string: text, attributes: regularAttributes) // Start with base attributes
             let pattern = "`([^`]+)`"
             
             guard let regex = try? NSRegularExpression(pattern: pattern) else {
@@ -249,10 +249,12 @@ enum StreamRenderer {
             for match in matches.reversed() {
                 if match.range.location != NSNotFound && match.range.length > 0 {
                     let codeRange = match.range(at: 1)
-                    result.setAttributes([
-                        .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
-                        .foregroundColor: NSColor.systemOrange
-                    ], range: codeRange)
+                    
+                    // First reset all attributes to regular ones
+                    result.setAttributes(regularAttributes, range: match.range)
+                    
+                    // Then apply inline code attributes just to the content
+                    result.setAttributes(inlineCodeAttributes, range: codeRange)
                     
                     // Remove the backticks themselves
                     result.replaceCharacters(in: match.range, with: result.attributedSubstring(from: codeRange))
@@ -260,8 +262,7 @@ enum StreamRenderer {
             }
             
             return result
-        }
-        
+        }        
         
 
         private func validateAndAutocorrectLanguage(_ language: String) -> String {
@@ -537,7 +538,11 @@ enum StreamRenderer {
                 .foregroundColor: NSColor.textColor,
                 .backgroundColor: NSColor.clear,
                 .paragraphStyle: paragraphStyle,
-                .baselineOffset: 0  // Explicitly reset baseline
+                .baselineOffset: 0,
+                .kern: 0, // Explicitly reset kerning
+                .ligature: 0, // Explicitly reset ligatures
+                .strikethroughStyle: 0, // Explicitly reset strikethrough
+                .underlineStyle: 0 // Explicitly reset underline
             ])
         }
         
