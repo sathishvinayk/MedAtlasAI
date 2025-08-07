@@ -362,149 +362,17 @@ enum StreamRenderer {
             
             return validLanguages.contains(normalized) ? normalized : ""
         }
-        
-        private func finalizeIncompleteBlocks(output: inout NSMutableAttributedString) {
-            stateLock.withLock {
-                switch _state {
-                case .inCodeBlock(_, let openingBackticks):
-                    output.append(createCodeBlockContent(_codeBlockBuffer))
-                    output.append(createCodeBlockDelimiter(backticks: openingBackticks))
-                case .potentialCodeBlockStart(let backticks):
-                    output.append(createRegularText(backticks + _languageBuffer))
-                case .potentialCodeBlockEnd(let backticks):
-                    output.append(createRegularText(backticks))
-                default:
-                    break
-                }
-                
-                // Reset all state
-                _state = .text
-                _codeBlockBuffer = ""
-                _languageBuffer = ""
-                _pendingBackticks = ""
-                _lineBuffer = ""
-            }
-        }
-
 
         // MARK: - Helper Methods
         private func countConsecutiveBackticks(_ text: String) -> Int? {
             guard let first = text.first, first == "`" else { return nil }
             return text.prefix { $0 == "`" }.count
         }
-        
-        // Thread-safe version using NSString
-        // MARK: - Enhanced Code Block Detection
-        private func findPotentialCodeBlockEnd(in text: String, openingBackticks: String) -> (Range<String.Index>, String)? {
-            let minBackticks = max(3, openingBackticks.count)
-            let pattern = #"(?:(?:^|\n)[ ]{0,3})(`{\#(minBackticks),})(?=\s|$)"#
-            
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-                  let ticksRange = Range(match.range(at: 1), in: text) else {
-                return nil
-            }
-            
-            let backticks = String(text[ticksRange])
-            return (ticksRange, backticks)
-        }
 
         private struct CodeBlockMatch {
             let range: Range<String.Index>
             let language: String
             let content: String
-        }
-
-        private func findPartialCodeBlockEnd(in text: String, openingBackticks: String) -> String? {
-            let minBackticks = max(3, openingBackticks.count)
-            let partialTicks = text.prefix(minBackticks).filter { $0 == "`" }
-            return partialTicks.count >= 1 ? String(partialTicks) : nil
-        }
-
-        // MARK: - Nested Fence Handling (Optional)
-        private func handleNestedFences(in content: String, openingBackticks: String) -> String {
-            let fenceCount = openingBackticks.count
-            let nestedPattern = #"(^|\n)(`{3,})(?=\n|$)"#
-            
-            guard fenceCount > 3,
-                  let regex = try? NSRegularExpression(pattern: nestedPattern) else {
-                return content
-            }
-            
-            var processed = content
-            let matches = regex.matches(in: content, range: NSRange(content.startIndex..., in: content))
-            
-            for match in matches.reversed() {
-                if let range = Range(match.range(at: 2), in: content) {
-                    let ticks = String(content[range])
-                    if ticks.count >= fenceCount {
-                        // Escape inner fences by adding one more backtick
-                        processed.replaceSubrange(range, with: ticks + "`")
-                    }
-                }
-            }
-            
-            return processed
-        }
-
-        private func findCompleteCodeBlock(in text: String) -> CodeBlockMatch? {
-            let pattern = #"(?s)(^|\n)(?<ticks>```+)(?<language>\w*)\n(?<content>.*?)\n?(?<closing>```+)(\n|$)"#
-            
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else {
-                return nil
-            }
-            
-            let ticksRange = Range(match.range(withName: "ticks"), in: text)!
-            let languageRange = Range(match.range(withName: "language"), in: text)!
-            let contentRange = Range(match.range(withName: "content"), in: text)!
-            let closingRange = Range(match.range(withName: "closing"), in: text)!
-            
-            let fullRange = Range(match.range, in: text)!
-            let language = String(text[languageRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let content = String(text[contentRange])
-            
-            // Verify ticks count matches (at least 3)
-            let ticksCount = text[ticksRange].count
-            let closingCount = text[closingRange].count
-            guard ticksCount >= 3 && closingCount >= 3 else { return nil }
-            
-            return CodeBlockMatch(
-                range: fullRange,
-                language: language,
-                content: content
-            )
-        }
-
-        private func findCodeBlockStart(in text: String) -> (range: Range<String.Index>, language: String)? {
-            let pattern = #"(^|\n)(?<ticks>```+)(?<language>\w*)(\n|$)"#
-            
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-                let ticksRange = Range(match.range(withName: "ticks"), in: text),
-                text[ticksRange].count >= 3 else {
-                return nil
-            }
-            
-            let fullRange = Range(match.range, in: text)!
-            let language = match.range(withName: "language").location != NSNotFound ?
-                String(text[Range(match.range(withName: "language"), in: text)!]).trimmingCharacters(in: .whitespacesAndNewlines) :
-                ""
-            
-            return (fullRange, language)
-        }
-
-        private func findCodeBlockEnd(in text: String) -> Range<String.Index>? {
-            let pattern = #"(^|\n)(?<ticks>```+)(\n|$)"#
-            
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-                let ticksRange = Range(match.range(withName: "ticks"), in: text),
-                text[ticksRange].count >= 3 else {
-                return nil
-            }
-            
-            return Range(match.range, in: text)
         }
         
         private func commitUpdate(_ update: NSMutableAttributedString, isComplete: Bool) {
