@@ -245,10 +245,11 @@ enum StreamRenderer {
                         let validatedLanguage = validateAndAutocorrectLanguage(languagePart)
                         
                         // Create the opening delimiter (not added to output yet)
-                        _pendingDelimiter = createCodeBlockDelimiter(
-                            backticks: backticks,
-                            language: validatedLanguage
-                        )
+                        // _pendingDelimiter = createCodeBlockDelimiter(
+                        //     backticks: backticks,
+                        //     language: validatedLanguage
+                        // )
+                        _pendingDelimiter = nil
                         
                         // Skip past the language and newline
                         remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
