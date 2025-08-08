@@ -264,17 +264,17 @@ enum StreamRenderer {
                         let codeBlock = NSMutableAttributedString()
                         
                         // 1. Add opening delimiter if we have one
-                        if let delimiter = _pendingDelimiter {
-                            codeBlock.append(delimiter)
+                        // if let delimiter = _pendingDelimiter {
+                            // codeBlock.append(delimiter)
                             _pendingDelimiter = nil
-                        }
+                        // }
                         
                         // 2. Add ONLY the code content (exclude closing backticks)
                         let content = String(remainingLine[..<endRange.lowerBound])
                         codeBlock.append(createCodeBlockContent(content))
                         
                         // 3. Add closing delimiter
-                        codeBlock.append(createCodeBlockDelimiter(backticks: foundBackticks))
+                        // codeBlock.append(createCodeBlockDelimiter(backticks: foundBackticks))
                         
                         output.append(codeBlock)
                         parserState = .text
