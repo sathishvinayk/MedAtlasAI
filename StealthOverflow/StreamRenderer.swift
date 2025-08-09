@@ -600,6 +600,7 @@ enum StreamRenderer {
         }
 
         private func createCodeBlock(language: String, content: String) -> NSView {
+            print("language -> \(language)")
             let container = NSView()
             container.translatesAutoresizingMaskIntoConstraints = false
             container.setContentHuggingPriority(.required, for: .vertical)
@@ -612,6 +613,13 @@ enum StreamRenderer {
             bubble.layer?.cornerRadius = 6
             bubble.layer?.borderWidth = 1
             bubble.layer?.borderColor = NSColor.separatorColor.cgColor
+            
+            // Create the language label
+            let languageLabel = NSTextField(labelWithString: language.isEmpty ? "code" : language)
+            languageLabel.translatesAutoresizingMaskIntoConstraints = false
+            languageLabel.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+            languageLabel.textColor = NSColor.secondaryLabelColor
+            languageLabel.alignment = .right
             
             let textView = NSTextView()
             textView.translatesAutoresizingMaskIntoConstraints = false
@@ -627,36 +635,28 @@ enum StreamRenderer {
             
             container.addSubview(bubble)
             bubble.addSubview(textView)
+            bubble.addSubview(languageLabel)
             
-            var constraints = [
+            let constraints = [
                 bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),  // Reduced from 4
-                bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor),  // Reduced from -4
+                bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+                bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor),
                 
-                textView.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 6),  // Reduced from 8
-                textView.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -6),  // Reduced from -8
+                // Language label constraints
+                languageLabel.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 4),
+                languageLabel.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
+                languageLabel.leadingAnchor.constraint(greaterThanOrEqualTo: bubble.leadingAnchor, constant: 8),
+                
+                // Text view constraints
+                textView.topAnchor.constraint(equalTo: languageLabel.bottomAnchor, constant: 4),
+                textView.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
                 textView.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
                 textView.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
                 
+                // Container width constraint
                 container.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
             ]
-            
-            // Add language label only if needed
-            if !language.isEmpty {
-                let languageLabel = NSTextField(labelWithString: language)
-                languageLabel.translatesAutoresizingMaskIntoConstraints = false
-                languageLabel.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
-                languageLabel.textColor = NSColor.secondaryLabelColor
-                languageLabel.alignment = .right
-                bubble.addSubview(languageLabel)
-                
-                constraints += [
-                    languageLabel.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 4),
-                    languageLabel.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -6),
-                    textView.topAnchor.constraint(equalTo: languageLabel.bottomAnchor, constant: 2) // Reduced spacing
-                ]
-            }
             
             NSLayoutConstraint.activate(constraints)
             updateCodeBlockHeight(container)
