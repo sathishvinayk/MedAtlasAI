@@ -304,7 +304,7 @@ private struct TextAttributes {
         .paragraphStyle: {
             let style = NSMutableParagraphStyle()
             style.lineHeightMultiple = 1.2
-            style.paragraphSpacing = 4
+            style.paragraphSpacing = 1
             style.lineBreakMode = .byWordWrapping
             style.alignment = .natural
             return style
@@ -463,28 +463,41 @@ enum StreamRenderer {
         func updateCodeBlockHeight(_ codeBlock: NSView) {
             guard let textView = codeBlock.subviews.first?.subviews.first as? NSTextView else { return }
             
-            // Calculate available width (accounting for insets and padding)
-            let availableWidth = maxWidth - 16 - 16 // Account for bubble padding and text insets
+            // Calculate available width accounting for all padding
+            let horizontalPadding: CGFloat = 16 // 8 on each side
+            let availableWidth = maxWidth - horizontalPadding
             
+            // Create temporary text container for measurement
             let textContainer = NSTextContainer(containerSize: NSSize(width: availableWidth, height: .greatestFiniteMagnitude))
             let layoutManager = NSLayoutManager()
             layoutManager.addTextContainer(textContainer)
             
+            // Create text storage with the same attributes
             let textStorage = NSTextStorage(string: textView.string)
+            textStorage.addAttributes([
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            ], range: NSRange(location: 0, length: textStorage.length))
             textStorage.addLayoutManager(layoutManager)
             
+            // Calculate height
             layoutManager.ensureLayout(for: textContainer)
             let usedRect = layoutManager.usedRect(for: textContainer)
-            let height = ceil(usedRect.height) + 16 // Add text insets
             
-            // Update or create height constraint
+            // Add vertical padding (top + bottom)
+            let verticalPadding: CGFloat = 16 // 8 + 8
+            
+            // Add language label height if present
+            let languageLabelHeight: CGFloat = codeBlock.subviews.first?.subviews.contains(where: { $0 is NSTextField }) == true ? 20 : 0
+            
+            let totalHeight = ceil(usedRect.height) + verticalPadding + languageLabelHeight
+            
+            // Update constraints
             if let constraint = codeBlock.constraints.first(where: { $0.firstAttribute == .height }) {
-                constraint.constant = height
+                constraint.constant = totalHeight
             } else {
-                codeBlock.heightAnchor.constraint(equalToConstant: height).isActive = true
+                codeBlock.heightAnchor.constraint(equalToConstant: totalHeight).isActive = true
             }
             
-            // Force immediate layout update
             codeBlock.needsLayout = true
             codeBlock.layoutSubtreeIfNeeded()
         }
@@ -568,7 +581,7 @@ enum StreamRenderer {
             bubble.translatesAutoresizingMaskIntoConstraints = false
             bubble.wantsLayer = true
             bubble.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            bubble.layer?.cornerRadius = 8
+            bubble.layer?.cornerRadius = 6
             bubble.layer?.borderWidth = 1
             bubble.layer?.borderColor = NSColor.separatorColor.cgColor
             
@@ -582,8 +595,7 @@ enum StreamRenderer {
             textView.string = content
             textView.textContainerInset = NSSize(width: 8, height: 8)
             textView.textContainer?.widthTracksTextView = false
-            textView.textContainer?.containerSize = NSSize(width: maxWidth - 32, height: .greatestFiniteMagnitude)
-            
+            textView.textContainer?.containerSize = NSSize(width: maxWidth - 20, height: .greatestFiniteMagnitude)
             
             container.addSubview(bubble)
             bubble.addSubview(textView)
@@ -591,11 +603,11 @@ enum StreamRenderer {
             var constraints = [
                 bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2), // Reduced from 4
-                bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2), // Reduced from -4
+                bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),  // Reduced from 4
+                bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor),  // Reduced from -4
                 
-                textView.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
-                textView.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
+                textView.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 6),  // Reduced from 8
+                textView.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -6),  // Reduced from -8
                 textView.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
                 textView.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
                 
@@ -613,7 +625,7 @@ enum StreamRenderer {
                 
                 constraints += [
                     languageLabel.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 4),
-                    languageLabel.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
+                    languageLabel.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -6),
                     textView.topAnchor.constraint(equalTo: languageLabel.bottomAnchor, constant: 2) // Reduced spacing
                 ]
             }
@@ -768,13 +780,13 @@ enum StreamRenderer {
         bubbleWidth.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
+            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 2),
+            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -2),
             stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
             stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
             
-            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
-            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+            bubble.topAnchor.constraint(equalTo: container.topAnchor),
+            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             
             bubbleWidth,
             bubble.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
