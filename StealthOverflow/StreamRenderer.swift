@@ -414,15 +414,18 @@ enum StreamRenderer {
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     
-                    // Process each element sequentially
                     for element in elements {
                         switch element {
                         case .text(let attributedString):
+                            // If we have a current code block, we need to close it first
+                            if self._currentCodeBlock != nil {
+                                self._currentCodeBlock = nil
+                                self._currentTextBlock = nil
+                            }
+                            
                             if let currentBlock = self._currentTextBlock {
-                                // Append to existing text block
                                 currentBlock.appendText(attributedString)
                             } else {
-                                // Create new text block
                                 let textBlock = self.createTextBlock()
                                 textBlock.setText(attributedString)
                                 self.stackView.addArrangedSubview(textBlock)
@@ -430,23 +433,26 @@ enum StreamRenderer {
                             }
                             
                         case .codeBlock(let language, let content):
-                            if let currentCodeBlock = self._currentCodeBlock,
-                            let textView = currentCodeBlock.subviews.first?.subviews.first as? NSTextView {
-                                // Append to existing code block
-                                textView.string = textView.string + content
-                                self.updateCodeBlockHeight(currentCodeBlock)
-                            } else {
-                                // Create new code block
+                            // If we're not in a code block, create a new one
+                            if self._currentCodeBlock == nil {
                                 let codeBlock = self.createCodeBlock(language: language, content: content)
                                 self.stackView.addArrangedSubview(codeBlock)
                                 self._currentCodeBlock = codeBlock
                                 self._currentTextBlock = nil
+                            } else {
+                                // Append to existing code block
+                                if let textView = self._currentCodeBlock?.subviews.first?.subviews.first as? NSTextView {
+                                    textView.string = textView.string + content
+                                    self.updateCodeBlockHeight(self._currentCodeBlock!)
+                                }
                             }
                         }
                     }
                     
                     if isComplete {
                         self.stop()
+                        self._currentTextBlock = nil
+                        self._currentCodeBlock = nil
                     } else {
                         self.startDisplayLinkIfNeeded()
                     }
