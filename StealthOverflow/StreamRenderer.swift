@@ -139,7 +139,7 @@ class CodeBlockParser {
         
         // Early return for completely plain text
         if !remainingLine.contains("`") && parserState == .text {
-            return [.text(createRegularText(line))]
+            return [.text(createRegularText(remainingLine))]
         }
         
         while !remainingLine.isEmpty {
@@ -149,6 +149,11 @@ class CodeBlockParser {
                     // Process text before backticks
                     let textBefore = String(remainingLine[..<backtickIndex])
                     if !textBefore.isEmpty {
+                         // Only add if it's not just whitespace/newlines
+                        // let trimmedBefore = textBefore.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // if !trimmedBefore.isEmpty {
+                        //     output.append(.text(createRegularText(textBefore)))
+                        // }
                         output.append(.text(createRegularText(textBefore)))
                     }
                     
@@ -157,6 +162,10 @@ class CodeBlockParser {
                     if let backtickCount = countConsecutiveBackticks(backtickPart), backtickCount >= 3 {
                         let backticks = String(backtickPart.prefix(backtickCount))
                         let remainingAfterBackticks = String(backtickPart.dropFirst(backtickCount))
+
+                        if output.last?.textContent.trimmingCharacters(in: .newlines).isEmpty == true {
+                            _ = output.popLast()
+                        }
                         
                         parserState = .potentialCodeBlockStart(backticks: backticks)
                         remainingLine = remainingAfterBackticks
@@ -178,6 +187,9 @@ class CodeBlockParser {
                     // Skip past the language and newline
                     remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
                     parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
+                    while remainingLine.first == "\n" {
+                        remainingLine.removeFirst()
+                    }
                 } else {
                     languageBuffer += remainingLine
                     remainingLine = ""
@@ -187,9 +199,25 @@ class CodeBlockParser {
                 if let (endRange, _) = findClosingBackticks(in: remainingLine, openingBackticks: openingBackticks) {
                     let completeContent = codeBlockBuffer + String(remainingLine[..<endRange.lowerBound])
                     codeBlockBuffer = ""
-                    output.append(.codeBlock(language: language, content: completeContent))
+
+                    // Trim only trailing whitespace from code block content
+                    let trimmedContent = completeContent.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedContent.isEmpty {
+                        output.append(.codeBlock(language: language, content: completeContent))
+                    }
+                    
+                    // output.append(.codeBlock(language: language, content: completeContent))
                     parserState = .text
                     remainingLine = String(remainingLine[endRange.upperBound...])
+
+                    // Skip any immediate newlines after the code block
+                    // if let firstChar = remainingLine.first, firstChar == "\n" {
+                    //     remainingLine.removeFirst()
+                    // }
+                     // Skip any immediate newlines after the code block
+                    while remainingLine.first == "\n" {
+                        remainingLine.removeFirst()
+                    }
                 } else {
                     // For partial code blocks, return incremental updates
                     if !codeBlockBuffer.isEmpty {
@@ -892,7 +920,6 @@ extension String {
         return result
     }
 }
-
 
 // Add this extension at the top level of your file (not inside any class/struct)
 extension Unicode.Scalar {
