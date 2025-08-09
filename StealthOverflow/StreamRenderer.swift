@@ -23,6 +23,12 @@ class CodeBlockParser {
             }
         }
     }
+
+    // MARK: - New Output Type
+    enum ParsedElement {
+        case text(NSAttributedString)
+        case codeBlock(language: String, content: String)
+    }
     
     // Thread-safe state access
     private let stateLock = NSRecursiveLock()
@@ -57,6 +63,13 @@ class CodeBlockParser {
         get { stateLock.withLock { _lineBuffer } }
         set { stateLock.withLock { _lineBuffer = newValue } }
     }
+
+    private var _partialCodeBlockContent = ""
+    
+    private var partialCodeBlockContent: String {
+        get { stateLock.withLock { _partialCodeBlockContent } }
+        set { stateLock.withLock { _partialCodeBlockContent = newValue } }
+    }
     
     // Constants
     private static let validLanguages: Set<String> = [
@@ -67,37 +80,41 @@ class CodeBlockParser {
     ]
     
     // MARK: - Public Interface
-    func parseChunk(_ chunk: String, isComplete: Bool = false) -> NSAttributedString {
+    func parseChunk(_ chunk: String, isComplete: Bool = false) -> [ParsedElement] {
         return stateLock.withLock {
-            // Combine with any previous partial line
             var remainingText = lineBuffer + chunk
             lineBuffer = ""
+            var output: [ParsedElement] = []
             
-            let output = NSMutableAttributedString()
-            
-            // Special case: if text is completely plain, process immediately
+            // Special case for plain text
             if !remainingText.contains("`") && parserState == .text {
-                output.append(createRegularText(remainingText))
-                return output
+                let text = partialCodeBlockContent + remainingText
+                partialCodeBlockContent = ""
+                return [.text(createRegularText(text))]
             }
             
             while !remainingText.isEmpty {
-                // Process complete lines only
                 if let newlineIndex = remainingText.firstIndex(of: "\n") {
                     let line = String(remainingText[..<newlineIndex])
                     remainingText = String(remainingText[remainingText.index(after: newlineIndex)...])
                     
-                    output.append(processLine(line + "\n"))
+                    let processed = processLine(line + "\n")
+                    output.append(contentsOf: processed)
                 } else {
-                    // Buffer incomplete line for next chunk
                     lineBuffer = remainingText
                     remainingText = ""
                 }
             }
             
-            if isComplete && !lineBuffer.isEmpty {
-                output.append(processLine(lineBuffer))
-                lineBuffer = ""
+            if isComplete {
+                if !partialCodeBlockContent.isEmpty {
+                    output.append(.text(createRegularText(partialCodeBlockContent)))
+                    partialCodeBlockContent = ""
+                }
+                if !lineBuffer.isEmpty {
+                    output.append(contentsOf: processLine(lineBuffer))
+                    lineBuffer = ""
+                }
             }
             
             return output
@@ -116,13 +133,13 @@ class CodeBlockParser {
     }
     
     // MARK: - Private Methods
-    private func processLine(_ line: String) -> NSAttributedString {
-        let output = NSMutableAttributedString()
+    private func processLine(_ line: String) -> [ParsedElement] {
+        var output: [ParsedElement] = []
         var remainingLine = line
         
         // Early return for completely plain text
         if !remainingLine.contains("`") && parserState == .text {
-            return createRegularText(remainingLine)
+            return [.text(createRegularText(line))]
         }
         
         while !remainingLine.isEmpty {
@@ -132,7 +149,7 @@ class CodeBlockParser {
                     // Process text before backticks
                     let textBefore = String(remainingLine[..<backtickIndex])
                     if !textBefore.isEmpty {
-                        output.append(createRegularText(textBefore))
+                        output.append(.text(createRegularText(textBefore)))
                     }
                     
                     // Process backticks
@@ -144,20 +161,19 @@ class CodeBlockParser {
                         parserState = .potentialCodeBlockStart(backticks: backticks)
                         remainingLine = remainingAfterBackticks
                     } else {
-                        output.append(processInlineCode(backtickPart))
+                        output.append(.text(processInlineCode(backtickPart)))
                         remainingLine = ""
                     }
                 } else {
-                    output.append(createRegularText(remainingLine))
+                    output.append(.text(createRegularText(remainingLine)))
                     remainingLine = ""
                 }
                 
             case .potentialCodeBlockStart(let backticks):
                 if let newlineIndex = remainingLine.firstIndex(of: "\n") {
-                    let languagePart = String(remainingLine[..<newlineIndex])
+                    let languagePart = languageBuffer + String(remainingLine[..<newlineIndex])
+                    languageBuffer = ""
                     let validatedLanguage = validateAndAutocorrectLanguage(languagePart)
-                    
-                    _pendingDelimiter = nil
                     
                     // Skip past the language and newline
                     remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
@@ -168,38 +184,29 @@ class CodeBlockParser {
                 }
                 
             case .inCodeBlock(let language, let openingBackticks):
-                if let (endRange, foundBackticks) = findClosingBackticks(in: remainingLine, openingBackticks: openingBackticks) {
-                    // Create the complete code block
-                    let codeBlock = NSMutableAttributedString()
-                    
-                    _pendingDelimiter = nil
-                    
-                    // Add ONLY the code content (exclude closing backticks)
-                    let content = String(remainingLine[..<endRange.lowerBound])
-                    codeBlock.append(createCodeBlockContent(content))
-                    
-                    output.append(codeBlock)
+                if let (endRange, _) = findClosingBackticks(in: remainingLine, openingBackticks: openingBackticks) {
+                    let completeContent = codeBlockBuffer + String(remainingLine[..<endRange.lowerBound])
+                    codeBlockBuffer = ""
+                    output.append(.codeBlock(language: language, content: completeContent))
                     parserState = .text
-                    
-                    // Skip past the closing backticks
                     remainingLine = String(remainingLine[endRange.upperBound...])
                 } else {
-                    // No closing backticks found yet - add as code content
-                    if let delimiter = _pendingDelimiter {
-                        output.append(delimiter)
-                        _pendingDelimiter = nil
+                    // For partial code blocks, return incremental updates
+                    if !codeBlockBuffer.isEmpty {
+                        output.append(.codeBlock(language: "", content: codeBlockBuffer))
+                        codeBlockBuffer = ""
                     }
-                    output.append(createCodeBlockContent(remainingLine))
+                    output.append(.codeBlock(language: "", content: remainingLine))
                     remainingLine = ""
                 }
-                
+
             case .potentialCodeBlockEnd(let backticks):
                 // Handle incomplete closing fence
                 if remainingLine.allSatisfy({ $0 == "`" }) {
                     pendingBackticks += remainingLine
                     remainingLine = ""
                 } else {
-                    output.append(createCodeBlockContent(backticks + remainingLine))
+                    output.append(.codeBlock(language: "", content: backticks + remainingLine))
                     parserState = .text
                     remainingLine = ""
                 }
@@ -214,8 +221,8 @@ class CodeBlockParser {
         let pattern = #"(?:^|\n)(`{\#(minBackticks),})(?=\s|$)"#
         
         guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-              let ticksRange = Range(match.range(at: 1), in: text) else {
+            let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+            let ticksRange = Range(match.range(at: 1), in: text) else {
             return nil
         }
         
@@ -297,6 +304,9 @@ private struct TextAttributes {
         .paragraphStyle: {
             let style = NSMutableParagraphStyle()
             style.lineHeightMultiple = 1.2
+            style.paragraphSpacing = 4
+            style.lineBreakMode = .byWordWrapping
+            style.alignment = .natural
             return style
         }()
     ]
@@ -326,17 +336,44 @@ enum StreamRenderer {
     static var windowResizeObserver: Any?
     static var debounceTimer: Timer?
 
+    private static func handleWindowResize(_ bubble: NSView, container: NSView, controller: StreamMessageController) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.allowsImplicitAnimation = true
+            
+            // Update all code blocks in the hierarchy
+            updateAllCodeBlockHeights(in: container, controller: controller)
+            container.needsLayout = true
+            container.layoutSubtreeIfNeeded()
+        }
+    }
+    
+    private static func updateAllCodeBlockHeights(in view: NSView, controller: StreamMessageController) {
+        // Recursively find all code block views and update their heights
+        for subview in view.subviews {
+            if subview.subviews.first?.subviews.first is NSTextView {
+                controller.updateCodeBlockHeight(subview)
+            }
+            updateAllCodeBlockHeights(in: subview, controller: controller)
+        }
+    }
+
     final class StreamMessageController {
-        let textBlock: TextBlock
+        private var _currentCodeBlock: NSView?
+        let containerView: NSView
+        private let stackView: NSStackView
+        // let textBlock: TextBlock
         private let processingQueue = DispatchQueue(label: "stream.processor", qos: .userInteractive)
         private var displayLink: DisplayLink?
         private let codeBlockParser = CodeBlockParser()
+        private let maxWidth: CGFloat
         
         // Protected state
         private let stateLock = NSRecursiveLock()
         private var _isAnimating = false
-        private var _fullTextBuffer = NSMutableAttributedString()
+        private var _elements: [CodeBlockParser.ParsedElement] = []
         private var _lastRenderTime: CFTimeInterval = 0
+        private var _currentTextBlock: TextBlock? // Track the current text block
         
         // Constants
         private let minFrameInterval: CFTimeInterval = 1/60
@@ -346,53 +383,67 @@ enum StreamRenderer {
             set { stateLock.withLock { _isAnimating = newValue } }
         }
         
-        init(textBlock: TextBlock) {
-            self.textBlock = textBlock
+        init(containerView: NSView, stackView: NSStackView, maxWidth: CGFloat) {
+            self.containerView = containerView
+            self.stackView = stackView
+            self.maxWidth = maxWidth
         }
         
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
-            let textBlock = self.textBlock
-            
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
                 
                 let cleanedChunk = chunk.cleanedForStream().normalizeMarkdownCodeBlocks()
                 guard !cleanedChunk.isEmpty || isComplete else { return }
                 
-                let update = self.processChunk(cleanedChunk, isComplete: isComplete)
+                let newElements = self.processChunk(cleanedChunk, isComplete: isComplete)
                 
                 DispatchQueue.main.async {
-                    guard textBlock.superview != nil else { return }
-                    
-                    self.commitUpdate(update, isComplete: isComplete)
+                    guard self.containerView.superview != nil else { return }
+                    self.commitUpdate(newElements, isComplete: isComplete)
                 }
             }
         }
         
-        private func processChunk(_ chunk: String, isComplete: Bool) -> NSMutableAttributedString {
-            let parsedText = codeBlockParser.parseChunk(chunk, isComplete: isComplete)
-            let output = NSMutableAttributedString(attributedString: parsedText)
-            
-            return stateLock.withLock {
-                _fullTextBuffer.append(output)
-                return _fullTextBuffer
-            }
+        private func processChunk(_ chunk: String, isComplete: Bool) -> [CodeBlockParser.ParsedElement] {
+            return codeBlockParser.parseChunk(chunk, isComplete: isComplete)
         }
         
-        private func commitUpdate(_ update: NSMutableAttributedString, isComplete: Bool) {
+        private func commitUpdate(_ elements: [CodeBlockParser.ParsedElement], isComplete: Bool) {
             stateLock.withLock {
-                let bufferCopy = update.copy() as! NSAttributedString
-                
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     
-                    NSAnimationContext.beginGrouping()
-                    NSAnimationContext.current.duration = 0
-                    NSAnimationContext.current.allowsImplicitAnimation = false
-                    
-                    self.textBlock.updateFullText(bufferCopy)
-                    
-                    NSAnimationContext.endGrouping()
+                    // Process each element sequentially
+                    for element in elements {
+                        switch element {
+                        case .text(let attributedString):
+                            if let currentBlock = self._currentTextBlock {
+                                // Append to existing text block
+                                currentBlock.appendText(attributedString)
+                            } else {
+                                // Create new text block
+                                let textBlock = self.createTextBlock()
+                                textBlock.setText(attributedString)
+                                self.stackView.addArrangedSubview(textBlock)
+                                self._currentTextBlock = textBlock
+                            }
+                            
+                        case .codeBlock(let language, let content):
+                            if let currentCodeBlock = self._currentCodeBlock,
+                            let textView = currentCodeBlock.subviews.first?.subviews.first as? NSTextView {
+                                // Append to existing code block
+                                textView.string = textView.string + content
+                                self.updateCodeBlockHeight(currentCodeBlock)
+                            } else {
+                                // Create new code block
+                                let codeBlock = self.createCodeBlock(language: language, content: content)
+                                self.stackView.addArrangedSubview(codeBlock)
+                                self._currentCodeBlock = codeBlock
+                                self._currentTextBlock = nil
+                            }
+                        }
+                    }
                     
                     if isComplete {
                         self.stop()
@@ -402,6 +453,78 @@ enum StreamRenderer {
                 }
             }
         }
+
+        func updateCodeBlockHeight(_ codeBlock: NSView) {
+            guard let textView = codeBlock.subviews.first?.subviews.first as? NSTextView else { return }
+            
+            // Calculate available width (accounting for insets and padding)
+            let availableWidth = maxWidth - 16 - 16 // Account for bubble padding and text insets
+            
+            let textContainer = NSTextContainer(containerSize: NSSize(width: availableWidth, height: .greatestFiniteMagnitude))
+            let layoutManager = NSLayoutManager()
+            layoutManager.addTextContainer(textContainer)
+            
+            let textStorage = NSTextStorage(string: textView.string)
+            textStorage.addLayoutManager(layoutManager)
+            
+            layoutManager.ensureLayout(for: textContainer)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let height = ceil(usedRect.height) + 16 // Add text insets
+            
+            // Update or create height constraint
+            if let constraint = codeBlock.constraints.first(where: { $0.firstAttribute == .height }) {
+                constraint.constant = height
+            } else {
+                codeBlock.heightAnchor.constraint(equalToConstant: height).isActive = true
+            }
+            
+            // Force immediate layout update
+            codeBlock.needsLayout = true
+            codeBlock.layoutSubtreeIfNeeded()
+        }
+
+        private func updateViews(with elements: [CodeBlockParser.ParsedElement]) {
+            let oldCount = stackView.arrangedSubviews.count
+            guard elements.count > oldCount else { return }
+
+            // append only the newly-parsed elements
+            for element in elements[oldCount..<elements.count] {
+                switch element {
+                case .text(let attributedString):
+                    // If the last arranged view is a TextBlock, append into it.
+                    if let last = stackView.arrangedSubviews.last as? TextBlock,
+                    let storage = last.textView.textStorage {
+                        storage.beginEditing()
+                        storage.append(attributedString)
+                        storage.endEditing()
+                        last.updateHeight()
+                    } else {
+                        // Otherwise create a fresh TextBlock
+                        let textBlock = createTextBlock()
+                        // ensure the storage exists and set the attributed string
+                        if let storage = textBlock.textView.textStorage {
+                            storage.beginEditing()
+                            storage.setAttributedString(attributedString)
+                            storage.endEditing()
+                        } else {
+                            textBlock.textView.string = attributedString.string
+                        }
+                        stackView.addArrangedSubview(textBlock)
+                        textBlock.updateHeight()
+                    }
+
+                case .codeBlock(let language, let content):
+                    // Always create a new code block view - it splits the text flow
+                    let codeBlock = createCodeBlock(language: language, content: content)
+                    stackView.addArrangedSubview(codeBlock)
+                }
+            }
+
+            // Force layout update
+            containerView.needsLayout = true
+            containerView.layoutSubtreeIfNeeded()
+        }
+
         
         private func startDisplayLinkIfNeeded() {
             stateLock.withLock {
@@ -414,6 +537,85 @@ enum StreamRenderer {
                 displayLink?.start()
             }
         }
+
+        private func createTextBlock() -> TextBlock {
+            let textBlock = TextBlock(maxWidth: maxWidth)
+            textBlock.translatesAutoresizingMaskIntoConstraints = false
+            textBlock.setContentHuggingPriority(.defaultHigh, for: .vertical)
+            textBlock.setContentCompressionResistancePriority(.required, for: .vertical)
+            
+            // Configure text container for proper wrapping
+            textBlock.textView.textContainer?.widthTracksTextView = true
+            textBlock.textView.textContainer?.lineFragmentPadding = 0
+            textBlock.textView.textContainerInset = NSSize(width: 0, height: 4)
+            
+            return textBlock
+        }
+
+        private func createCodeBlock(language: String, content: String) -> NSView {
+            let container = NSView()
+            container.translatesAutoresizingMaskIntoConstraints = false
+            container.setContentHuggingPriority(.required, for: .vertical)
+            container.setContentCompressionResistancePriority(.required, for: .vertical)
+            
+            let bubble = NSView()
+            bubble.translatesAutoresizingMaskIntoConstraints = false
+            bubble.wantsLayer = true
+            bubble.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            bubble.layer?.cornerRadius = 8
+            bubble.layer?.borderWidth = 1
+            bubble.layer?.borderColor = NSColor.separatorColor.cgColor
+            
+            let textView = NSTextView()
+            textView.translatesAutoresizingMaskIntoConstraints = false
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.drawsBackground = false
+            textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            textView.textColor = NSColor.textColor
+            textView.string = content
+            textView.textContainerInset = NSSize(width: 8, height: 8)
+            textView.textContainer?.widthTracksTextView = false
+            textView.textContainer?.containerSize = NSSize(width: maxWidth - 32, height: .greatestFiniteMagnitude)
+            
+            
+            container.addSubview(bubble)
+            bubble.addSubview(textView)
+            
+            var constraints = [
+                bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                bubble.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 2), // Reduced from 4
+                bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2), // Reduced from -4
+                
+                textView.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
+                textView.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
+                textView.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
+                textView.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
+                
+                container.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
+            ]
+            
+            // Add language label only if needed
+            if !language.isEmpty {
+                let languageLabel = NSTextField(labelWithString: language)
+                languageLabel.translatesAutoresizingMaskIntoConstraints = false
+                languageLabel.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+                languageLabel.textColor = NSColor.secondaryLabelColor
+                languageLabel.alignment = .right
+                bubble.addSubview(languageLabel)
+                
+                constraints += [
+                    languageLabel.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 4),
+                    languageLabel.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
+                    textView.topAnchor.constraint(equalTo: languageLabel.bottomAnchor, constant: 2) // Reduced spacing
+                ]
+            }
+            
+            NSLayoutConstraint.activate(constraints)
+            updateCodeBlockHeight(container)
+            return container
+        }
         
         private func processPendingUpdates() {
             stateLock.withLock {
@@ -422,14 +624,14 @@ enum StreamRenderer {
                 
                 _lastRenderTime = currentTime
                 
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self,
-                          !self._fullTextBuffer.string.isEmpty,
-                          self.textBlock.superview != nil else { return }
-                    
-                    let bufferCopy = self._fullTextBuffer.copy() as! NSAttributedString
-                    self.textBlock.updateFullText(bufferCopy)
-                }
+//                DispatchQueue.main.async { [weak self] in
+//                    guard let self = self,
+//                          !self._fullTextBuffer.string.isEmpty,
+//                          self.textBlock.superview != nil else { return }
+//                    
+//                    let bufferCopy = self._fullTextBuffer.copy() as! NSAttributedString
+//                    self.textBlock.updateFullText(bufferCopy)
+//                }
             }
         }
         
@@ -443,75 +645,22 @@ enum StreamRenderer {
         
         func clear() {
             stateLock.withLock {
-                _fullTextBuffer = NSMutableAttributedString()
+                _elements = []
                 codeBlockParser.reset()
                 
                 DispatchQueue.main.async { [weak self] in
-                    self?.textBlock.textView.string = ""
-                    self?.textBlock.updateHeight()
+                    guard let self = self else { return }
+                    self.stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
                 }
             }
         }
     }
 
-    // MARK: - TextBlock
     class TextBlock: NSView {
-        private(set) var textView: NSTextView
+        let textView: NSTextView
         private var heightConstraint: NSLayoutConstraint?
-        private let maxWidth: CGFloat
-        private var isUpdatingLayout = false
-        private var lastWindowState: (frame: NSRect, isZoomed: Bool)?
-    
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            observeWindowState()
-        }
-
-        private func observeWindowState() {
-            guard let window = window else { return }
-            
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(windowDidChangeState),
-                name: NSWindow.didResizeNotification,
-                object: window
-            )
-        }
-
-        @objc private func windowDidChangeState() {
-            guard let window = window else { return }
-            
-            let currentState = (window.frame, window.isZoomed)
-            if let lastState = lastWindowState, lastState == currentState {
-                return
-            }
-            
-            lastWindowState = currentState
-            
-            // Force a layout update when window state changes
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.25
-                context.allowsImplicitAnimation = true
-                self.updateHeight()
-            }
-        }
-        override func layout() {
-            super.layout()
-            
-            // Calculate available width (subtracting 10 for margins + 16 for internal padding)
-            let availableWidth = max(bounds.width - 52, 150) // Never go below 150
-            
-            textView.textContainer?.containerSize = NSSize(
-                width: availableWidth,
-                height: .greatestFiniteMagnitude
-            )
-            
-            updateHeight()
-        }
-    
+        
         init(maxWidth: CGFloat) {
-            self.maxWidth = maxWidth
-
             let textStorage = NSTextStorage()
             let layoutManager = NSLayoutManager()
             textStorage.addLayoutManager(layoutManager)
@@ -519,24 +668,21 @@ enum StreamRenderer {
             layoutManager.addTextContainer(textContainer)
 
             self.textView = NSTextView(frame: .zero, textContainer: textContainer)
-
             super.init(frame: .zero)
+            
             setupTextView()
         }
-
+        
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
         }
-
+        
         private func setupTextView() {
+            translatesAutoresizingMaskIntoConstraints = false
             textView.translatesAutoresizingMaskIntoConstraints = false
             textView.isEditable = false
             textView.isSelectable = true
             textView.drawsBackground = false
-            textView.textContainerInset = NSSize(width: 8, height: 8)
-            textView.textContainer?.lineFragmentPadding = 0
-            textView.textContainer?.widthTracksTextView = true
-            textView.isHorizontallyResizable = false
             
             addSubview(textView)
             
@@ -544,51 +690,36 @@ enum StreamRenderer {
                 textView.leadingAnchor.constraint(equalTo: leadingAnchor),
                 textView.trailingAnchor.constraint(equalTo: trailingAnchor),
                 textView.topAnchor.constraint(equalTo: topAnchor),
-                textView.bottomAnchor.constraint(equalTo: bottomAnchor),
-                widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
+                textView.bottomAnchor.constraint(equalTo: bottomAnchor)
             ])
         }
 
-        func updateFullText(_ text: NSAttributedString) {
-            assert(Thread.isMainThread, "Text updates must be on main thread")
+        func setText(_ attributedString: NSAttributedString) {
+            textView.textStorage?.setAttributedString(attributedString)
+            updateHeight()
+        }
+
+        func appendText(_ attributedString: NSAttributedString) {
             guard let storage = textView.textStorage else { return }
-            
             storage.beginEditing()
-            storage.setAttributedString(text)
+            storage.append(attributedString)
             storage.endEditing()
-            
-            // Trigger layout without recursion
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0
-                context.allowsImplicitAnimation = false
-                self.updateHeight()
-            }
+            updateHeight()
         }
         
         func updateHeight() {
-            guard !isUpdatingLayout,
-                let container = textView.textContainer,
-                let layoutManager = textView.layoutManager else { return }
+            guard let layoutManager = textView.layoutManager,
+                let textContainer = textView.textContainer else { return }
             
-            isUpdatingLayout = true
-            defer { isUpdatingLayout = false }
+            layoutManager.ensureLayout(for: textContainer)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let height = ceil(usedRect.height) + textView.textContainerInset.height * 2
             
-            // Calculate required height
-            layoutManager.ensureLayout(for: container)
-            let usedRect = layoutManager.usedRect(for: container)
-            let totalHeight = ceil(usedRect.height) + textView.textContainerInset.height * 2
-            
-            // Update height constraint
             if let heightConstraint = heightConstraint {
-                heightConstraint.constant = totalHeight
+                heightConstraint.constant = height
             } else {
-                heightConstraint = heightAnchor.constraint(equalToConstant: totalHeight)
+                heightConstraint = heightAnchor.constraint(equalToConstant: height)
                 heightConstraint?.isActive = true
-            }
-            
-            // Safely request superview layout
-            if let superview = superview, superview.inLiveResize {
-                superview.needsLayout = true
             }
         }
     }
@@ -610,17 +741,22 @@ enum StreamRenderer {
 
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.spacing = 4
+        stack.spacing = 2 // Reduced from 4
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.distribution = .fill
         stack.alignment = .leading
+        stack.setHuggingPriority(.required, for: .vertical)
+        for view in stack.arrangedSubviews {
+            view.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
 
         bubble.addSubview(stack)
 
-        let textblock = TextBlock(maxWidth: maxWidth)
-        stack.addArrangedSubview(textblock)
+        // let textblock = TextBlock(maxWidth: maxWidth)
+        // stack.addArrangedSubview(textblock)
 
-        let controller = StreamMessageController(textBlock: textblock)
+        // let controller = StreamMessageController(textBlock: textblock)
+        let controller = StreamMessageController(containerView: container, stackView: stack, maxWidth: maxWidth)
         // Create dynamic width constraints
         let bubbleWidth = bubble.widthAnchor.constraint(equalTo: container.widthAnchor, constant: -10)
         bubbleWidth.priority = .defaultHigh
@@ -640,10 +776,10 @@ enum StreamRenderer {
             
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
-             
+            
         ])
         
-        _ = setupWindowResizeHandler(for: bubble, container: container)
+        _ = setupWindowResizeHandler(for: bubble, container: container, controller: controller)
 
         return (container, controller)
     }
@@ -653,30 +789,22 @@ enum StreamRenderer {
         return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
     }
 
-    private static func setupWindowResizeHandler(for bubble: NSView, container: NSView) -> Any? {
+    private static func setupWindowResizeHandler(for bubble: NSView, container: NSView, controller: StreamMessageController) -> Any? {
         guard let window = bubble.window else { return nil }
         
         return NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: window,
             queue: .main
-        ) { _ in
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.25
-                context.allowsImplicitAnimation = true
-                
-                // Update the bubble's width constraint
-                if let constraint = bubble.constraints.first(where: {
-                    $0.firstAttribute == .width &&
-                    $0.secondAttribute == .width &&
-                    $0.secondItem === container
-                }) {
-                    constraint.constant = -10 // Maintain the 10pt offset
-                }
-                
-                container.needsLayout = true
-                container.layoutSubtreeIfNeeded()
-            }
+        ) { [weak bubble, weak container, weak controller] _ in
+            guard let bubble = bubble, let container = container, let controller = controller else { return }
+            // Debounce the resize events
+            NSObject.cancelPreviousPerformRequests(withTarget: bubble)
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0.15
+            NSAnimationContext.current.allowsImplicitAnimation = true
+            handleWindowResize(bubble, container: container, controller: controller)
+            NSAnimationContext.endGrouping()
         }
     }
 
@@ -701,9 +829,9 @@ extension String {
         cleaned = cleaned.filter { char in
             let value = char.unicodeScalars.first?.value ?? 0
             return (value >= 32 && value <= 126) || // ASCII printable
-                   value == 10 || // Newline
-                   value == 9 || // Tab
-                   (value > 127 && value <= 0xFFFF) // Common Unicode
+                value == 10 || // Newline
+                value == 9 || // Tab
+                (value > 127 && value <= 0xFFFF) // Common Unicode
         }
         return cleaned
     }
@@ -752,5 +880,16 @@ extension String {
 extension Unicode.Scalar {
     var isPrintableASCII: Bool {
         return value >= 32 && value <= 126  // ASCII printable range
+    }
+}
+
+extension CodeBlockParser.ParsedElement {
+    var textContent: String {
+        switch self {
+        case .text(let attributedString):
+            return attributedString.string
+        case .codeBlock(_, let content):
+            return content
+        }
     }
 }
