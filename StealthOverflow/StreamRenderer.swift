@@ -37,7 +37,6 @@ class CodeBlockParser {
     private var _languageBuffer = ""
     private var _pendingBackticks = ""
     private var _lineBuffer = ""
-    private var _pendingDelimiter: NSAttributedString?
     
     private var parserState: ParserState {
         get { stateLock.withLock { _state } }
@@ -128,7 +127,6 @@ class CodeBlockParser {
             _languageBuffer = ""
             _pendingBackticks = ""
             _lineBuffer = ""
-            _pendingDelimiter = nil
         }
     }
     
@@ -139,11 +137,11 @@ class CodeBlockParser {
         
         // Early return for completely plain text
         if !remainingLine.contains("`") && parserState == .text {
-            let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedLine.isEmpty {
+            // let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            // if !trimmedLine.isEmpty {
                 return [.text(createRegularText(remainingLine))]
-            }
-            return []
+            // }
+            // return []
         }
         
         while !remainingLine.isEmpty {
@@ -354,14 +352,6 @@ class CodeBlockParser {
     
     private func createRegularText(_ text: String) -> NSAttributedString {
         return NSAttributedString(string: text, attributes: TextAttributes.regular)
-    }
-    
-    private func createCodeBlockContent(_ text: String) -> NSAttributedString {
-        let cleanedText = text
-            .replacingOccurrences(of: "\t", with: "    ")
-            .replacingOccurrences(of: "\r\n", with: "\n")
-        
-        return NSAttributedString(string: cleanedText, attributes: TextAttributes.codeBlock)
     }
 }
 
