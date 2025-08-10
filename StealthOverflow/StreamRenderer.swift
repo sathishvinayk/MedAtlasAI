@@ -278,34 +278,49 @@ class CodeBlockParser {
                 let codeRange = match.range(at: 1)
                 let codeContent = (text as NSString).substring(with: codeRange)
                 
-                // Create replacement string with proper spacing
-                let replacementString: String
-                if match.range.location > 0 && text[text.index(text.startIndex, offsetBy: match.range.location - 1)] != " " {
-                    // Add space before if needed
-                    replacementString = " " + codeContent
-                } else {
-                    replacementString = codeContent
+                // Determine if we need to add spaces
+                var needsLeadingSpace = false
+                var needsTrailingSpace = false
+                
+                // Characters that should never have spaces after them
+                let noTrailingSpaceChars: [Character] = [")", "]", "}", ">", ".", ",", ";", ":", "!", "?", "-", "_"]
+                // Characters that should never have spaces before them
+                let noLeadingSpaceChars: [Character] = ["(", "[", "{", "<", "-", "_"]
+                
+                // Check character before
+                if match.range.location > 0 {
+                    let prevCharIndex = text.index(text.startIndex, offsetBy: match.range.location - 1)
+                    let prevChar = text[prevCharIndex]
+                    needsLeadingSpace = !prevChar.isWhitespace && !noLeadingSpaceChars.contains(prevChar)
                 }
                 
-                if match.range.location + match.range.length < text.count && 
-                text[text.index(text.startIndex, offsetBy: match.range.location + match.range.length)] != " " {
-                    // Add space after if needed
-                    replacementString = replacementString + " "
+                // Check character after
+                if match.range.location + match.range.length < text.count {
+                    let nextCharIndex = text.index(text.startIndex, offsetBy: match.range.location + match.range.length)
+                    let nextChar = text[nextCharIndex]
+                    needsTrailingSpace = !nextChar.isWhitespace && !noTrailingSpaceChars.contains(nextChar)
                 }
                 
-                // First reset all attributes to regular ones
-                result.setAttributes(TextAttributes.regular, range: match.range)
+                // Build replacement string
+                var replacement = codeContent
+                if needsLeadingSpace {
+                    replacement = " " + replacement
+                }
+                if needsTrailingSpace {
+                    replacement = replacement + " "
+                }
                 
-                // Create the replacement attributed string
-                let replacementAttrString = NSMutableAttributedString(string: replacementString)
+                // Create attributed replacement
+                let replacementAttr = NSMutableAttributedString(string: replacement)
                 
-                // Apply inline code attributes just to the content (not the spaces)
-                let contentRange = NSRange(location: replacementString.hasPrefix(" ") ? 1 : 0, 
-                                        length: codeContent.count)
-                replacementAttrString.setAttributes(TextAttributes.inlineCode, range: contentRange)
+                // Apply code formatting only to the actual code content
+                let codeStart = needsLeadingSpace ? 1 : 0
+                let codeLength = codeContent.count
+                replacementAttr.addAttributes(TextAttributes.inlineCode, 
+                                            range: NSRange(location: codeStart, length: codeLength))
                 
                 // Replace the match
-                result.replaceCharacters(in: match.range, with: replacementAttrString)
+                result.replaceCharacters(in: match.range, with: replacementAttr)
             }
         }
         
@@ -362,6 +377,8 @@ private struct TextAttributes {
             style.paragraphSpacing = 1
             style.lineBreakMode = .byWordWrapping
             style.alignment = .natural
+            style.paragraphSpacingBefore = 1
+            style.lineSpacing = 1
             return style
         }()
     ]
@@ -370,8 +387,14 @@ private struct TextAttributes {
         .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
         .foregroundColor: NSColor.systemOrange,
         .backgroundColor: NSColor.controlBackgroundColor.withAlphaComponent(0.3),
-        .baselineOffset: 0
-        .kern: 0.5 
+        .baselineOffset: 0,
+        .kern: 0.5,
+        // Add padding to ensure proper spacing
+        .paragraphStyle: {
+            let style = NSMutableParagraphStyle()
+            style.lineHeightMultiple = 1.2
+            return style
+        }()
     ]
     
     static let codeBlock: [NSAttributedString.Key: Any] = [
@@ -448,7 +471,7 @@ enum StreamRenderer {
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
-                let cleanedChunk = chunk.cleanedForStream().normalizeMarkdownCodeBlocks()
+                let cleanedChunk = chunk.cleanedForStream().normalizeMarkdownCodeBlocks().fixMissingFunctionSpaces()
                 guard !cleanedChunk.isEmpty || isComplete else { return }
                 
                 let newElements = self.processChunk(cleanedChunk, isComplete: isComplete)
@@ -923,6 +946,17 @@ extension String {
             characters.removeFirst()
         }
         return String(characters)
+    }
+
+    func fixMissingFunctionSpaces() -> String {
+        // Only add space before parentheses when preceded by lowercase letter
+        // and not already preceded by space or punctuation
+        return self.replacingOccurrences(
+            of: #"(?<![ \s\-_([{])"# + // Negative lookbehind
+                #"([a-z])(\()"#,        // Lowercase letter followed by (
+            with: "$1 $2",
+            options: .regularExpression
+        )
     }
 }
 
