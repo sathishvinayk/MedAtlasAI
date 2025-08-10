@@ -128,11 +128,11 @@ class CodeBlockParser {
         
         // Early return for completely plain text
         if !remainingLine.contains("`") && parserState == .text {
-            let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedLine.isEmpty {
+            // let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            // if !trimmedLine.isEmpty {
                 return [.text(createRegularText(remainingLine))]
-            }
-            return []
+            // }
+            // return []
         }
         
         while !remainingLine.isEmpty {
@@ -141,7 +141,7 @@ class CodeBlockParser {
                 if let backtickIndex = remainingLine.firstIndex(of: "`") {
                     // Process text before backticks
                     let textBefore = String(remainingLine[..<backtickIndex])
-                    if !textBefore.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if !textBefore.isEmpty {
                         output.append(.text(createRegularText(textBefore)))
                     }
                     
@@ -152,7 +152,7 @@ class CodeBlockParser {
                         let remainingAfterBackticks = String(backtickPart.dropFirst(backtickCount))
 
                         // Remove any empty text elements that might be just newlines
-                        if case .text(let attrStr) = output.last, attrStr.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if case .text(let attrStr) = output.last, attrStr.string.isEmpty {
                             _ = output.popLast()
                         }
                         
@@ -163,8 +163,13 @@ class CodeBlockParser {
                         remainingLine = ""
                     }
                 } else {
-                    let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmedLine.isEmpty {
+                    // let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // if !trimmedLine.isEmpty {
+                    //     output.append(.text(createRegularText(remainingLine)))
+                    // }
+                    // remainingLine = ""
+                    // Process remaining text - preserve all whitespace
+                    if !remainingLine.isEmpty {
                         output.append(.text(createRegularText(remainingLine)))
                     }
                     remainingLine = ""
