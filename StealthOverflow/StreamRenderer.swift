@@ -62,13 +62,6 @@ class CodeBlockParser {
         get { stateLock.withLock { _lineBuffer } }
         set { stateLock.withLock { _lineBuffer = newValue } }
     }
-
-    private var _partialCodeBlockContent = ""
-    
-    private var partialCodeBlockContent: String {
-        get { stateLock.withLock { _partialCodeBlockContent } }
-        set { stateLock.withLock { _partialCodeBlockContent = newValue } }
-    }
     
     // Constants
     private static let validLanguages: Set<String> = [
@@ -87,8 +80,7 @@ class CodeBlockParser {
             
             // Special case for plain text
             if !remainingText.contains("`") && parserState == .text {
-                let text = remainingText // not chunk
-                return [.text(createRegularText(text))]
+                return [.text(createRegularText(remainingText))] // Use remainingText instead of chunk
             }
             
             while !remainingText.isEmpty {
@@ -104,17 +96,17 @@ class CodeBlockParser {
                 }
             }
             
-            if isComplete {
-                if !partialCodeBlockContent.isEmpty {
-                    output.append(.text(createRegularText(partialCodeBlockContent)))
-                    partialCodeBlockContent = ""
-                }
-                if !lineBuffer.isEmpty {
-                    output.append(contentsOf: processLine(lineBuffer))
-                    lineBuffer = ""
-                }
-            }
-            
+//            if isComplete {
+//                if !partialCodeBlockContent.isEmpty {
+//                    output.append(.text(createRegularText(partialCodeBlockContent)))
+//                    partialCodeBlockContent = ""
+//                }
+//                if !lineBuffer.isEmpty {
+//                    output.append(contentsOf: processLine(lineBuffer))
+//                    lineBuffer = ""
+//                }
+//            }
+//            
             return output
         }
     }
@@ -248,6 +240,7 @@ class CodeBlockParser {
     }
     
     private func findClosingBackticks(in text: String, openingBackticks: String) -> (Range<String.Index>, String)? {
+        guard !text.isEmpty else { return nil }
         let minBackticks = max(3, openingBackticks.count)
         let pattern = #"(?:^|\n)(`{\#(minBackticks),})(?=\s|$)"#
         
@@ -421,7 +414,7 @@ enum StreamRenderer {
         let containerView: NSView
         private let stackView: NSStackView
         // let textBlock: TextBlock
-        private let processingQueue = DispatchQueue(label: "stream.processor", qos: .userInteractive)
+        private let processingQueue = DispatchQueue(label: "stream.processor", qos: .userInteractive, attributes:[], autoreleaseFrequency: .workItem)
         private var displayLink: DisplayLink?
         private let codeBlockParser = CodeBlockParser()
         private let maxWidth: CGFloat
@@ -470,51 +463,54 @@ enum StreamRenderer {
         }
         
         private func commitUpdate(_ elements: [CodeBlockParser.ParsedElement], isComplete: Bool) {
-            stateLock.withLock {                    
-                for element in elements {
-                    switch element {
-                    case .text(let attributedString):
-                        let trimmedString = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmedString.isEmpty else { continue }
-                        
-                        if self._currentCodeBlock != nil {
-                            self._currentCodeBlock = nil
-                            self._currentTextBlock = nil
-                        }
-                        
-                        if let currentBlock = self._currentTextBlock {
-                            currentBlock.appendText(attributedString)
-                        } else {
-                            let textBlock = self.createTextBlock()
-                            textBlock.setText(attributedString)
-                            self.stackView.addArrangedSubview(textBlock)
-                            self._currentTextBlock = textBlock
-                        }
-                        
-                    case .codeBlock(let language, let content):
-                        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmedContent.isEmpty else { continue }
-                        
-                        if self._currentCodeBlock == nil {
-                            let codeBlock = self.createCodeBlock(language: language, content: content)
-                            self.stackView.addArrangedSubview(codeBlock)
-                            self._currentCodeBlock = codeBlock
-                            self._currentTextBlock = nil
-                        } else {
-                            if let textView = self._currentCodeBlock?.subviews.first?.subviews.first as? NSTextView {
-                                textView.string = textView.string + content
-                                self.updateCodeBlockHeight(self._currentCodeBlock!)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.containerView.superview != nil else { return }
+                stateLock.withLock {                    
+                    for element in elements {
+                        switch element {
+                        case .text(let attributedString):
+                            let trimmedString = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmedString.isEmpty else { continue }
+                            
+                            if self._currentCodeBlock != nil {
+                                self._currentCodeBlock = nil
+                                self._currentTextBlock = nil
+                            }
+                            
+                            if let currentBlock = self._currentTextBlock {
+                                currentBlock.appendText(attributedString)
+                            } else {
+                                let textBlock = self.createTextBlock()
+                                textBlock.setText(attributedString)
+                                self.stackView.addArrangedSubview(textBlock)
+                                self._currentTextBlock = textBlock
+                            }
+                            
+                        case .codeBlock(let language, let content):
+                            let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmedContent.isEmpty else { continue }
+                            
+                            if self._currentCodeBlock == nil {
+                                let codeBlock = self.createCodeBlock(language: language, content: content)
+                                self.stackView.addArrangedSubview(codeBlock)
+                                self._currentCodeBlock = codeBlock
+                                self._currentTextBlock = nil
+                            } else {
+                                if let textView = self._currentCodeBlock?.subviews.first?.subviews.first as? NSTextView {
+                                    textView.string = textView.string + content
+                                    self.updateCodeBlockHeight(self._currentCodeBlock!)
+                                }
                             }
                         }
                     }
-                }
-                
-                if isComplete {
-                    self.stop()
-                    self._currentTextBlock = nil
-                    self._currentCodeBlock = nil
-                } else {
-                    self.startDisplayLinkIfNeeded()
+                    
+                    if isComplete {
+                        self.stop()
+                        self._currentTextBlock = nil
+                        self._currentCodeBlock = nil
+                    } else {
+                        self.startDisplayLinkIfNeeded()
+                    }
                 }
             }
         }
@@ -857,6 +853,14 @@ enum StreamRenderer {
             )
             textBlock.needsUpdateConstraints = true
             textBlock.needsLayout = true
+        }
+    }
+
+    // In StreamRenderer
+    static func cleanup(controller: StreamMessageController) {
+        if let observer = windowResizeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            windowResizeObserver = nil
         }
     }
 }
