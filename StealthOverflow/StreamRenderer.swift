@@ -87,8 +87,7 @@ class CodeBlockParser {
             
             // Special case for plain text
             if !remainingText.contains("`") && parserState == .text {
-                let text = partialCodeBlockContent + remainingText
-                partialCodeBlockContent = ""
+                let text = remainingText // not chunk
                 return [.text(createRegularText(text))]
             }
             
@@ -137,11 +136,11 @@ class CodeBlockParser {
         
         // Early return for completely plain text
         if !remainingLine.contains("`") && parserState == .text {
-            // let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            // if !trimmedLine.isEmpty {
+            let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedLine.isEmpty {
                 return [.text(createRegularText(remainingLine))]
-            // }
-            // return []
+            }
+            return []
         }
         
         while !remainingLine.isEmpty {
@@ -181,7 +180,7 @@ class CodeBlockParser {
                 
             case .potentialCodeBlockStart(let backticks):
                 if let newlineIndex = remainingLine.firstIndex(of: "\n") {
-                    let languagePart = languageBuffer + String(remainingLine[..<newlineIndex])
+                    let languagePart = (languageBuffer + String(remainingLine[..<newlineIndex])).trimmingCharacters(in: .whitespacesAndNewlines)
                     languageBuffer = ""
                     let validatedLanguage = validateAndAutocorrectLanguage(languagePart)
                     
@@ -276,43 +275,32 @@ class CodeBlockParser {
                 let codeRange = match.range(at: 1)
                 let codeContent = (text as NSString).substring(with: codeRange)
                 
-                // Determine if we need to add spaces
-                var needsLeadingSpace = false
-                var needsTrailingSpace = false
+                // Create the replacement string with proper spacing
+                var replacement = codeContent
                 
-                // Characters that should never have spaces after them
-                let noTrailingSpaceChars: [Character] = [")", "]", "}", ">", ".", ",", ";", ":", "!", "?", "-", "_"]
-                // Characters that should never have spaces before them
-                let noLeadingSpaceChars: [Character] = ["(", "[", "{", "<", "-", "_"]
-                
-                // Check character before
+                // Check if we need to add a space before the code
                 if match.range.location > 0 {
                     let prevCharIndex = text.index(text.startIndex, offsetBy: match.range.location - 1)
                     let prevChar = text[prevCharIndex]
-                    needsLeadingSpace = !prevChar.isWhitespace && !noLeadingSpaceChars.contains(prevChar)
+                    if !prevChar.isWhitespace && !prevChar.isPunctuation {
+                        replacement = " " + replacement
+                    }
                 }
                 
-                // Check character after
+                // Check if we need to add a space after the code
                 if match.range.location + match.range.length < text.count {
                     let nextCharIndex = text.index(text.startIndex, offsetBy: match.range.location + match.range.length)
                     let nextChar = text[nextCharIndex]
-                    needsTrailingSpace = !nextChar.isWhitespace && !noTrailingSpaceChars.contains(nextChar)
-                }
-                
-                // Build replacement string
-                var replacement = codeContent
-                if needsLeadingSpace {
-                    replacement = " " + replacement
-                }
-                if needsTrailingSpace {
-                    replacement = replacement + " "
+                    if !nextChar.isWhitespace && !nextChar.isPunctuation {
+                        replacement = replacement + " "
+                    }
                 }
                 
                 // Create attributed replacement
                 let replacementAttr = NSMutableAttributedString(string: replacement)
                 
                 // Apply code formatting only to the actual code content
-                let codeStart = needsLeadingSpace ? 1 : 0
+                let codeStart = replacement.hasPrefix(" ") ? 1 : 0
                 let codeLength = codeContent.count
                 replacementAttr.addAttributes(TextAttributes.inlineCode, 
                                             range: NSRange(location: codeStart, length: codeLength))
@@ -369,6 +357,7 @@ private struct TextAttributes {
             style.alignment = .natural
             style.paragraphSpacingBefore = 1
             style.lineSpacing = 1
+            style.hyphenationFactor = 0.5 // Better word wrapping
             return style
         }()
     ]
@@ -461,7 +450,10 @@ enum StreamRenderer {
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
-                let cleanedChunk = chunk.cleanedForStream().normalizeMarkdownCodeBlocks().fixMissingFunctionSpaces()
+                let cleanedChunk = chunk
+                            // .cleanedForStream()
+                            // .normalizeMarkdownCodeBlocks()
+                            // .fixMissingSpaces()
                 guard !cleanedChunk.isEmpty || isComplete else { return }
                 
                 let newElements = self.processChunk(cleanedChunk, isComplete: isComplete)
@@ -478,55 +470,51 @@ enum StreamRenderer {
         }
         
         private func commitUpdate(_ elements: [CodeBlockParser.ParsedElement], isComplete: Bool) {
-            stateLock.withLock {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    
-                    for element in elements {
-                        switch element {
-                        case .text(let attributedString):
-                            let trimmedString = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !trimmedString.isEmpty else { continue }
-                            
-                            if self._currentCodeBlock != nil {
-                                self._currentCodeBlock = nil
-                                self._currentTextBlock = nil
-                            }
-                            
-                            if let currentBlock = self._currentTextBlock {
-                                currentBlock.appendText(attributedString)
-                            } else {
-                                let textBlock = self.createTextBlock()
-                                textBlock.setText(attributedString)
-                                self.stackView.addArrangedSubview(textBlock)
-                                self._currentTextBlock = textBlock
-                            }
-                            
-                        case .codeBlock(let language, let content):
-                            let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !trimmedContent.isEmpty else { continue }
-                            
-                            if self._currentCodeBlock == nil {
-                                let codeBlock = self.createCodeBlock(language: language, content: content)
-                                self.stackView.addArrangedSubview(codeBlock)
-                                self._currentCodeBlock = codeBlock
-                                self._currentTextBlock = nil
-                            } else {
-                                if let textView = self._currentCodeBlock?.subviews.first?.subviews.first as? NSTextView {
-                                    textView.string = textView.string + content
-                                    self.updateCodeBlockHeight(self._currentCodeBlock!)
-                                }
+            stateLock.withLock {                    
+                for element in elements {
+                    switch element {
+                    case .text(let attributedString):
+                        let trimmedString = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmedString.isEmpty else { continue }
+                        
+                        if self._currentCodeBlock != nil {
+                            self._currentCodeBlock = nil
+                            self._currentTextBlock = nil
+                        }
+                        
+                        if let currentBlock = self._currentTextBlock {
+                            currentBlock.appendText(attributedString)
+                        } else {
+                            let textBlock = self.createTextBlock()
+                            textBlock.setText(attributedString)
+                            self.stackView.addArrangedSubview(textBlock)
+                            self._currentTextBlock = textBlock
+                        }
+                        
+                    case .codeBlock(let language, let content):
+                        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmedContent.isEmpty else { continue }
+                        
+                        if self._currentCodeBlock == nil {
+                            let codeBlock = self.createCodeBlock(language: language, content: content)
+                            self.stackView.addArrangedSubview(codeBlock)
+                            self._currentCodeBlock = codeBlock
+                            self._currentTextBlock = nil
+                        } else {
+                            if let textView = self._currentCodeBlock?.subviews.first?.subviews.first as? NSTextView {
+                                textView.string = textView.string + content
+                                self.updateCodeBlockHeight(self._currentCodeBlock!)
                             }
                         }
                     }
-                    
-                    if isComplete {
-                        self.stop()
-                        self._currentTextBlock = nil
-                        self._currentCodeBlock = nil
-                    } else {
-                        self.startDisplayLinkIfNeeded()
-                    }
+                }
+                
+                if isComplete {
+                    self.stop()
+                    self._currentTextBlock = nil
+                    self._currentCodeBlock = nil
+                } else {
+                    self.startDisplayLinkIfNeeded()
                 }
             }
         }
@@ -700,6 +688,10 @@ enum StreamRenderer {
                 }
             }
         }
+        deinit {
+            stop()
+            NotificationCenter.default.removeObserver(self)
+        }
     }
 
     class TextBlock: NSView {
@@ -869,20 +861,6 @@ enum StreamRenderer {
     }
 }
 
-extension String {
-    func cleanedForStream() -> String {
-        var cleaned = replacingOccurrences(of: "\0", with: "")
-        cleaned = cleaned.filter { char in
-            let value = char.unicodeScalars.first?.value ?? 0
-            return (value >= 32 && value <= 126) || // ASCII printable
-                value == 10 || // Newline
-                value == 9 || // Tab
-                (value > 127 && value <= 0xFFFF) // Common Unicode
-        }
-        return cleaned
-    }
-}
-
 // MARK: - NSLock Extension
 extension NSLock {
     func withLock<T>(_ block: () throws -> T) rethrows -> T {
@@ -892,7 +870,28 @@ extension NSLock {
     }
 }
 
+extension NSLocking {
+  func withLock<T>(_ block: () throws -> T) rethrows -> T { 
+        lock()
+        defer { unlock() }
+        return try block()
+   }
+}
+
 extension String {
+    func cleanedForStream() -> String {
+    // Only remove null bytes and clean truly unwanted characters
+        return self.replacingOccurrences(of: "\0", with: "")
+    }
+    
+    func fixMissingSpaces() -> String {
+        // This regex looks for lowercase letters followed by uppercase letters without space
+        return self.replacingOccurrences(
+            of: "([a-z])([A-Z])",
+            with: "$1 $2",
+            options: .regularExpression
+        )
+    }
     func normalizeMarkdownCodeBlocks() -> String {
         var result = self
         
@@ -936,17 +935,6 @@ extension String {
             characters.removeFirst()
         }
         return String(characters)
-    }
-
-    func fixMissingFunctionSpaces() -> String {
-        // Only add space before parentheses when preceded by lowercase letter
-        // and not already preceded by space or punctuation
-        return self.replacingOccurrences(
-            of: #"(?<![ \s\-_([{])"# + // Negative lookbehind
-                #"([a-z])(\()"#,        // Lowercase letter followed by (
-            with: "$1 $2",
-            options: .regularExpression
-        )
     }
 }
 
