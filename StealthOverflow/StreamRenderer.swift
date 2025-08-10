@@ -276,15 +276,36 @@ class CodeBlockParser {
         for match in matches.reversed() {
             if match.range.location != NSNotFound && match.range.length > 0 {
                 let codeRange = match.range(at: 1)
+                let codeContent = (text as NSString).substring(with: codeRange)
+                
+                // Create replacement string with proper spacing
+                let replacementString: String
+                if match.range.location > 0 && text[text.index(text.startIndex, offsetBy: match.range.location - 1)] != " " {
+                    // Add space before if needed
+                    replacementString = " " + codeContent
+                } else {
+                    replacementString = codeContent
+                }
+                
+                if match.range.location + match.range.length < text.count && 
+                text[text.index(text.startIndex, offsetBy: match.range.location + match.range.length)] != " " {
+                    // Add space after if needed
+                    replacementString = replacementString + " "
+                }
                 
                 // First reset all attributes to regular ones
                 result.setAttributes(TextAttributes.regular, range: match.range)
                 
-                // Then apply inline code attributes just to the content
-                result.setAttributes(TextAttributes.inlineCode, range: codeRange)
+                // Create the replacement attributed string
+                let replacementAttrString = NSMutableAttributedString(string: replacementString)
                 
-                // Remove the backticks themselves
-                result.replaceCharacters(in: match.range, with: result.attributedSubstring(from: codeRange))
+                // Apply inline code attributes just to the content (not the spaces)
+                let contentRange = NSRange(location: replacementString.hasPrefix(" ") ? 1 : 0, 
+                                        length: codeContent.count)
+                replacementAttrString.setAttributes(TextAttributes.inlineCode, range: contentRange)
+                
+                // Replace the match
+                result.replaceCharacters(in: match.range, with: replacementAttrString)
             }
         }
         
@@ -350,6 +371,7 @@ private struct TextAttributes {
         .foregroundColor: NSColor.systemOrange,
         .backgroundColor: NSColor.controlBackgroundColor.withAlphaComponent(0.3),
         .baselineOffset: 0
+        .kern: 0.5 
     ]
     
     static let codeBlock: [NSAttributedString.Key: Any] = [
@@ -894,7 +916,7 @@ extension String {
         }
         return String(characters)
     }
-    
+
     func trimmingLeadingWhitespace() -> String {
         var characters = Array(self)
         while characters.first?.isWhitespace == true && characters.first?.isNewline == false {
