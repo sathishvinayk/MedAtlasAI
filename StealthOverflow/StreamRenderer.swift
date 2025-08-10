@@ -139,7 +139,11 @@ class CodeBlockParser {
         
         // Early return for completely plain text
         if !remainingLine.contains("`") && parserState == .text {
-            return [.text(createRegularText(remainingLine))]
+            let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedLine.isEmpty {
+                return [.text(createRegularText(remainingLine))]
+            }
+            return []
         }
         
         while !remainingLine.isEmpty {
@@ -148,12 +152,7 @@ class CodeBlockParser {
                 if let backtickIndex = remainingLine.firstIndex(of: "`") {
                     // Process text before backticks
                     let textBefore = String(remainingLine[..<backtickIndex])
-                    if !textBefore.isEmpty {
-                         // Only add if it's not just whitespace/newlines
-                        // let trimmedBefore = textBefore.trimmingCharacters(in: .whitespacesAndNewlines)
-                        // if !trimmedBefore.isEmpty {
-                        //     output.append(.text(createRegularText(textBefore)))
-                        // }
+                    if !textBefore.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         output.append(.text(createRegularText(textBefore)))
                     }
                     
@@ -163,7 +162,8 @@ class CodeBlockParser {
                         let backticks = String(backtickPart.prefix(backtickCount))
                         let remainingAfterBackticks = String(backtickPart.dropFirst(backtickCount))
 
-                        if output.last?.textContent.trimmingCharacters(in: .newlines).isEmpty == true {
+                        // Remove any empty text elements that might be just newlines
+                        if case .text(let attrStr) = output.last, attrStr.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             _ = output.popLast()
                         }
                         
@@ -174,7 +174,10 @@ class CodeBlockParser {
                         remainingLine = ""
                     }
                 } else {
-                    output.append(.text(createRegularText(remainingLine)))
+                    let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedLine.isEmpty {
+                        output.append(.text(createRegularText(remainingLine)))
+                    }
                     remainingLine = ""
                 }
                 
@@ -186,10 +189,12 @@ class CodeBlockParser {
                     
                     // Skip past the language and newline
                     remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
+                    remainingLine = remainingLine.trimmingLeadingWhitespace()
+                    // parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
+                    // while remainingLine.first == "\n" {
+                    //     remainingLine.removeFirst()
+                    // }
                     parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
-                    while remainingLine.first == "\n" {
-                        remainingLine.removeFirst()
-                    }
                 } else {
                     languageBuffer += remainingLine
                     remainingLine = ""
@@ -201,9 +206,9 @@ class CodeBlockParser {
                     codeBlockBuffer = ""
 
                     // Trim only trailing whitespace from code block content
-                    let trimmedContent = completeContent.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let trimmedContent = completeContent.trimmingTrailingWhitespace()
                     if !trimmedContent.isEmpty {
-                        output.append(.codeBlock(language: language, content: completeContent))
+                        output.append(.codeBlock(language: language, content: trimmedContent))
                     }
                     
                     // output.append(.codeBlock(language: language, content: completeContent))
@@ -215,9 +220,10 @@ class CodeBlockParser {
                     //     remainingLine.removeFirst()
                     // }
                      // Skip any immediate newlines after the code block
-                    while remainingLine.first == "\n" {
-                        remainingLine.removeFirst()
-                    }
+                    // while remainingLine.first == "\n" {
+                    //     remainingLine.removeFirst()
+                    // }
+                    remainingLine = remainingLine.trimmingLeadingWhitespace()
                 } else {
                     // For partial code blocks, return incremental updates
                     if !codeBlockBuffer.isEmpty {
@@ -420,7 +426,6 @@ enum StreamRenderer {
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
-                
                 let cleanedChunk = chunk.cleanedForStream().normalizeMarkdownCodeBlocks()
                 guard !cleanedChunk.isEmpty || isComplete else { return }
                 
@@ -445,7 +450,9 @@ enum StreamRenderer {
                     for element in elements {
                         switch element {
                         case .text(let attributedString):
-                            // If we have a current code block, we need to close it first
+                            let trimmedString = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmedString.isEmpty else { continue }
+                            
                             if self._currentCodeBlock != nil {
                                 self._currentCodeBlock = nil
                                 self._currentTextBlock = nil
@@ -461,14 +468,15 @@ enum StreamRenderer {
                             }
                             
                         case .codeBlock(let language, let content):
-                            // If we're not in a code block, create a new one
+                            let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmedContent.isEmpty else { continue }
+                            
                             if self._currentCodeBlock == nil {
                                 let codeBlock = self.createCodeBlock(language: language, content: content)
                                 self.stackView.addArrangedSubview(codeBlock)
                                 self._currentCodeBlock = codeBlock
                                 self._currentTextBlock = nil
                             } else {
-                                // Append to existing code block
                                 if let textView = self._currentCodeBlock?.subviews.first?.subviews.first as? NSTextView {
                                     textView.string = textView.string + content
                                     self.updateCodeBlockHeight(self._currentCodeBlock!)
@@ -529,49 +537,6 @@ enum StreamRenderer {
             codeBlock.needsLayout = true
             codeBlock.layoutSubtreeIfNeeded()
         }
-
-        private func updateViews(with elements: [CodeBlockParser.ParsedElement]) {
-            let oldCount = stackView.arrangedSubviews.count
-            guard elements.count > oldCount else { return }
-
-            // append only the newly-parsed elements
-            for element in elements[oldCount..<elements.count] {
-                switch element {
-                case .text(let attributedString):
-                    // If the last arranged view is a TextBlock, append into it.
-                    if let last = stackView.arrangedSubviews.last as? TextBlock,
-                    let storage = last.textView.textStorage {
-                        storage.beginEditing()
-                        storage.append(attributedString)
-                        storage.endEditing()
-                        last.updateHeight()
-                    } else {
-                        // Otherwise create a fresh TextBlock
-                        let textBlock = createTextBlock()
-                        // ensure the storage exists and set the attributed string
-                        if let storage = textBlock.textView.textStorage {
-                            storage.beginEditing()
-                            storage.setAttributedString(attributedString)
-                            storage.endEditing()
-                        } else {
-                            textBlock.textView.string = attributedString.string
-                        }
-                        stackView.addArrangedSubview(textBlock)
-                        textBlock.updateHeight()
-                    }
-
-                case .codeBlock(let language, let content):
-                    // Always create a new code block view - it splits the text flow
-                    let codeBlock = createCodeBlock(language: language, content: content)
-                    stackView.addArrangedSubview(codeBlock)
-                }
-            }
-
-            // Force layout update
-            containerView.needsLayout = true
-            containerView.layoutSubtreeIfNeeded()
-        }
-
         
         private func startDisplayLinkIfNeeded() {
             stateLock.withLock {
@@ -918,6 +883,24 @@ extension String {
         )
         
         return result
+    }
+}
+
+extension String {
+    func trimmingTrailingWhitespace() -> String {
+        var characters = Array(self)
+        while characters.last?.isWhitespace == true && characters.last?.isNewline == false {
+            characters.removeLast()
+        }
+        return String(characters)
+    }
+    
+    func trimmingLeadingWhitespace() -> String {
+        var characters = Array(self)
+        while characters.first?.isWhitespace == true && characters.first?.isNewline == false {
+            characters.removeFirst()
+        }
+        return String(characters)
     }
 }
 
