@@ -115,7 +115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         window.collectionBehavior = [.canJoinAllSpaces, .transient, .stationary]
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.sharingType = .none
+        // window.sharingType = .none
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
         window.hidesOnDeactivate = false

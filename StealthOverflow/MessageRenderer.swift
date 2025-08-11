@@ -1,7 +1,7 @@
 // file MessageRenderer.swift
 import Cocoa
 
-final class CodeBlockView: NSView {
+final class CodeBlockView2: NSView {
     private let textView = NSTextView()
 
     init(code: String, maxWidth: CGFloat) {
@@ -107,7 +107,7 @@ enum MessageRenderer {
 
         for segment in segments {
             if segment.isCode {
-                let codeView = CodeBlockView(code: segment.content, maxWidth: maxWidth)
+                let codeView = CodeBlockView2(code: segment.content, maxWidth: maxWidth)
                 stack.addArrangedSubview(codeView)
             }
             else {
