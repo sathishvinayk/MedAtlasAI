@@ -1,3 +1,4 @@
+
 import Cocoa
 // MARK: - CodeBlockParser
 class CodeBlockParser {
@@ -37,6 +38,7 @@ class CodeBlockParser {
     private var _languageBuffer = ""
     private var _pendingBackticks = ""
     private var _lineBuffer = ""
+    private var _pendingDelimiter: NSAttributedString?
     
     private var parserState: ParserState {
         get { stateLock.withLock { _state } }
@@ -62,6 +64,13 @@ class CodeBlockParser {
         get { stateLock.withLock { _lineBuffer } }
         set { stateLock.withLock { _lineBuffer = newValue } }
     }
+
+    private var _partialCodeBlockContent = ""
+    
+    private var partialCodeBlockContent: String {
+        get { stateLock.withLock { _partialCodeBlockContent } }
+        set { stateLock.withLock { _partialCodeBlockContent = newValue } }
+    }
     
     // Constants
     private static let validLanguages: Set<String> = [
@@ -80,7 +89,9 @@ class CodeBlockParser {
             
             // Special case for plain text
             if !remainingText.contains("`") && parserState == .text {
-                return [.text(createRegularText(remainingText))] // Use remainingText instead of chunk
+                let text = partialCodeBlockContent + remainingText
+                partialCodeBlockContent = ""
+                return [.text(createRegularText(text))]
             }
             
             while !remainingText.isEmpty {
@@ -96,17 +107,17 @@ class CodeBlockParser {
                 }
             }
             
-//            if isComplete {
-//                if !partialCodeBlockContent.isEmpty {
-//                    output.append(.text(createRegularText(partialCodeBlockContent)))
-//                    partialCodeBlockContent = ""
-//                }
-//                if !lineBuffer.isEmpty {
-//                    output.append(contentsOf: processLine(lineBuffer))
-//                    lineBuffer = ""
-//                }
-//            }
-//            
+            if isComplete {
+                if !partialCodeBlockContent.isEmpty {
+                    output.append(.text(createRegularText(partialCodeBlockContent)))
+                    partialCodeBlockContent = ""
+                }
+                if !lineBuffer.isEmpty {
+                    output.append(contentsOf: processLine(lineBuffer))
+                    lineBuffer = ""
+                }
+            }
+            
             return output
         }
     }
@@ -118,6 +129,7 @@ class CodeBlockParser {
             _languageBuffer = ""
             _pendingBackticks = ""
             _lineBuffer = ""
+            _pendingDelimiter = nil
         }
     }
     
@@ -128,11 +140,7 @@ class CodeBlockParser {
         
         // Early return for completely plain text
         if !remainingLine.contains("`") && parserState == .text {
-            // let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            // if !trimmedLine.isEmpty {
-                return [.text(createRegularText(remainingLine))]
-            // }
-            // return []
+            return [.text(createRegularText(remainingLine))]
         }
         
         while !remainingLine.isEmpty {
@@ -142,6 +150,11 @@ class CodeBlockParser {
                     // Process text before backticks
                     let textBefore = String(remainingLine[..<backtickIndex])
                     if !textBefore.isEmpty {
+                         // Only add if it's not just whitespace/newlines
+                        // let trimmedBefore = textBefore.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // if !trimmedBefore.isEmpty {
+                        //     output.append(.text(createRegularText(textBefore)))
+                        // }
                         output.append(.text(createRegularText(textBefore)))
                     }
                     
@@ -151,8 +164,7 @@ class CodeBlockParser {
                         let backticks = String(backtickPart.prefix(backtickCount))
                         let remainingAfterBackticks = String(backtickPart.dropFirst(backtickCount))
 
-                        // Remove any empty text elements that might be just newlines
-                        if case .text(let attrStr) = output.last, attrStr.string.isEmpty {
+                        if output.last?.textContent.trimmingCharacters(in: .newlines).isEmpty == true {
                             _ = output.popLast()
                         }
                         
@@ -163,32 +175,22 @@ class CodeBlockParser {
                         remainingLine = ""
                     }
                 } else {
-                    // let trimmedLine = remainingLine.trimmingCharacters(in: .whitespacesAndNewlines)
-                    // if !trimmedLine.isEmpty {
-                    //     output.append(.text(createRegularText(remainingLine)))
-                    // }
-                    // remainingLine = ""
-                    // Process remaining text - preserve all whitespace
-                    if !remainingLine.isEmpty {
-                        output.append(.text(createRegularText(remainingLine)))
-                    }
+                    output.append(.text(createRegularText(remainingLine)))
                     remainingLine = ""
                 }
                 
             case .potentialCodeBlockStart(let backticks):
                 if let newlineIndex = remainingLine.firstIndex(of: "\n") {
-                    let languagePart = (languageBuffer + String(remainingLine[..<newlineIndex])).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let languagePart = languageBuffer + String(remainingLine[..<newlineIndex])
                     languageBuffer = ""
                     let validatedLanguage = validateAndAutocorrectLanguage(languagePart)
                     
                     // Skip past the language and newline
                     remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
-                    remainingLine = remainingLine.trimmingLeadingWhitespace()
-                    // parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
-                    // while remainingLine.first == "\n" {
-                    //     remainingLine.removeFirst()
-                    // }
                     parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
+                    while remainingLine.first == "\n" {
+                        remainingLine.removeFirst()
+                    }
                 } else {
                     languageBuffer += remainingLine
                     remainingLine = ""
@@ -200,9 +202,9 @@ class CodeBlockParser {
                     codeBlockBuffer = ""
 
                     // Trim only trailing whitespace from code block content
-                    let trimmedContent = completeContent.trimmingTrailingWhitespace()
+                    let trimmedContent = completeContent.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmedContent.isEmpty {
-                        output.append(.codeBlock(language: language, content: trimmedContent))
+                        output.append(.codeBlock(language: language, content: completeContent))
                     }
                     
                     // output.append(.codeBlock(language: language, content: completeContent))
@@ -214,10 +216,9 @@ class CodeBlockParser {
                     //     remainingLine.removeFirst()
                     // }
                      // Skip any immediate newlines after the code block
-                    // while remainingLine.first == "\n" {
-                    //     remainingLine.removeFirst()
-                    // }
-                    remainingLine = remainingLine.trimmingLeadingWhitespace()
+                    while remainingLine.first == "\n" {
+                        remainingLine.removeFirst()
+                    }
                 } else {
                     // For partial code blocks, return incremental updates
                     if !codeBlockBuffer.isEmpty {
@@ -245,7 +246,6 @@ class CodeBlockParser {
     }
     
     private func findClosingBackticks(in text: String, openingBackticks: String) -> (Range<String.Index>, String)? {
-        guard !text.isEmpty else { return nil }
         let minBackticks = max(3, openingBackticks.count)
         let pattern = #"(?:^|\n)(`{\#(minBackticks),})(?=\s|$)"#
         
@@ -271,40 +271,15 @@ class CodeBlockParser {
         for match in matches.reversed() {
             if match.range.location != NSNotFound && match.range.length > 0 {
                 let codeRange = match.range(at: 1)
-                let codeContent = (text as NSString).substring(with: codeRange)
                 
-                // Create the replacement string with proper spacing
-                var replacement = codeContent
+                // First reset all attributes to regular ones
+                result.setAttributes(TextAttributes.regular, range: match.range)
                 
-                // Check if we need to add a space before the code
-                if match.range.location > 0 {
-                    let prevCharIndex = text.index(text.startIndex, offsetBy: match.range.location - 1)
-                    let prevChar = text[prevCharIndex]
-                    if !prevChar.isWhitespace && !prevChar.isPunctuation {
-                        replacement = " " + replacement
-                    }
-                }
+                // Then apply inline code attributes just to the content
+                result.setAttributes(TextAttributes.inlineCode, range: codeRange)
                 
-                // Check if we need to add a space after the code
-                if match.range.location + match.range.length < text.count {
-                    let nextCharIndex = text.index(text.startIndex, offsetBy: match.range.location + match.range.length)
-                    let nextChar = text[nextCharIndex]
-                    if !nextChar.isWhitespace && !nextChar.isPunctuation {
-                        replacement = replacement + " "
-                    }
-                }
-                
-                // Create attributed replacement
-                let replacementAttr = NSMutableAttributedString(string: replacement)
-                
-                // Apply code formatting only to the actual code content
-                let codeStart = replacement.hasPrefix(" ") ? 1 : 0
-                let codeLength = codeContent.count
-                replacementAttr.addAttributes(TextAttributes.inlineCode, 
-                                            range: NSRange(location: codeStart, length: codeLength))
-                
-                // Replace the match
-                result.replaceCharacters(in: match.range, with: replacementAttr)
+                // Remove the backticks themselves
+                result.replaceCharacters(in: match.range, with: result.attributedSubstring(from: codeRange))
             }
         }
         
@@ -339,6 +314,14 @@ class CodeBlockParser {
     private func createRegularText(_ text: String) -> NSAttributedString {
         return NSAttributedString(string: text, attributes: TextAttributes.regular)
     }
+    
+    private func createCodeBlockContent(_ text: String) -> NSAttributedString {
+        let cleanedText = text
+            .replacingOccurrences(of: "\t", with: "    ")
+            .replacingOccurrences(of: "\r\n", with: "\n")
+        
+        return NSAttributedString(string: cleanedText, attributes: TextAttributes.codeBlock)
+    }
 }
 
 // MARK: - TextAttributes
@@ -353,9 +336,6 @@ private struct TextAttributes {
             style.paragraphSpacing = 1
             style.lineBreakMode = .byWordWrapping
             style.alignment = .natural
-            style.paragraphSpacingBefore = 1
-            style.lineSpacing = 1
-            style.hyphenationFactor = 0.5 // Better word wrapping
             return style
         }()
     ]
@@ -364,14 +344,7 @@ private struct TextAttributes {
         .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
         .foregroundColor: NSColor.systemOrange,
         .backgroundColor: NSColor.controlBackgroundColor.withAlphaComponent(0.3),
-        .baselineOffset: 0,
-        .kern: 0.5,
-        // Add padding to ensure proper spacing
-        .paragraphStyle: {
-            let style = NSMutableParagraphStyle()
-            style.lineHeightMultiple = 1.2
-            return style
-        }()
+        .baselineOffset: 0
     ]
     
     static let codeBlock: [NSAttributedString.Key: Any] = [
@@ -419,7 +392,7 @@ enum StreamRenderer {
         let containerView: NSView
         private let stackView: NSStackView
         // let textBlock: TextBlock
-        private let processingQueue = DispatchQueue(label: "stream.processor", qos: .userInteractive, attributes:[], autoreleaseFrequency: .workItem)
+        private let processingQueue = DispatchQueue(label: "stream.processor", qos: .userInteractive)
         private var displayLink: DisplayLink?
         private let codeBlockParser = CodeBlockParser()
         private let maxWidth: CGFloat
@@ -448,10 +421,8 @@ enum StreamRenderer {
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
-                let cleanedChunk = chunk
-                            // .cleanedForStream()
-                            // .normalizeMarkdownCodeBlocks()
-                            // .fixMissingSpaces()
+                
+                let cleanedChunk = chunk.cleanedForStream().normalizeMarkdownCodeBlocks()
                 guard !cleanedChunk.isEmpty || isComplete else { return }
                 
                 let newElements = self.processChunk(cleanedChunk, isComplete: isComplete)
@@ -468,15 +439,14 @@ enum StreamRenderer {
         }
         
         private func commitUpdate(_ elements: [CodeBlockParser.ParsedElement], isComplete: Bool) {
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self, self.containerView.superview != nil else { return }
-                stateLock.withLock {                    
+            stateLock.withLock {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    
                     for element in elements {
                         switch element {
                         case .text(let attributedString):
-                            let trimmedString = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !trimmedString.isEmpty else { continue }
-                            
+                            // If we have a current code block, we need to close it first
                             if self._currentCodeBlock != nil {
                                 self._currentCodeBlock = nil
                                 self._currentTextBlock = nil
@@ -492,15 +462,14 @@ enum StreamRenderer {
                             }
                             
                         case .codeBlock(let language, let content):
-                            let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !trimmedContent.isEmpty else { continue }
-                            
+                            // If we're not in a code block, create a new one
                             if self._currentCodeBlock == nil {
                                 let codeBlock = self.createCodeBlock(language: language, content: content)
                                 self.stackView.addArrangedSubview(codeBlock)
                                 self._currentCodeBlock = codeBlock
                                 self._currentTextBlock = nil
                             } else {
+                                // Append to existing code block
                                 if let textView = self._currentCodeBlock?.subviews.first?.subviews.first as? NSTextView {
                                     textView.string = textView.string + content
                                     self.updateCodeBlockHeight(self._currentCodeBlock!)
@@ -561,6 +530,49 @@ enum StreamRenderer {
             codeBlock.needsLayout = true
             codeBlock.layoutSubtreeIfNeeded()
         }
+
+        private func updateViews(with elements: [CodeBlockParser.ParsedElement]) {
+            let oldCount = stackView.arrangedSubviews.count
+            guard elements.count > oldCount else { return }
+
+            // append only the newly-parsed elements
+            for element in elements[oldCount..<elements.count] {
+                switch element {
+                case .text(let attributedString):
+                    // If the last arranged view is a TextBlock, append into it.
+                    if let last = stackView.arrangedSubviews.last as? TextBlock,
+                    let storage = last.textView.textStorage {
+                        storage.beginEditing()
+                        storage.append(attributedString)
+                        storage.endEditing()
+                        last.updateHeight()
+                    } else {
+                        // Otherwise create a fresh TextBlock
+                        let textBlock = createTextBlock()
+                        // ensure the storage exists and set the attributed string
+                        if let storage = textBlock.textView.textStorage {
+                            storage.beginEditing()
+                            storage.setAttributedString(attributedString)
+                            storage.endEditing()
+                        } else {
+                            textBlock.textView.string = attributedString.string
+                        }
+                        stackView.addArrangedSubview(textBlock)
+                        textBlock.updateHeight()
+                    }
+
+                case .codeBlock(let language, let content):
+                    // Always create a new code block view - it splits the text flow
+                    let codeBlock = createCodeBlock(language: language, content: content)
+                    stackView.addArrangedSubview(codeBlock)
+                }
+            }
+
+            // Force layout update
+            containerView.needsLayout = true
+            containerView.layoutSubtreeIfNeeded()
+        }
+
         
         private func startDisplayLinkIfNeeded() {
             stateLock.withLock {
@@ -688,10 +700,6 @@ enum StreamRenderer {
                     self.stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
                 }
             }
-        }
-        deinit {
-            stop()
-            NotificationCenter.default.removeObserver(self)
         }
     }
 
@@ -860,13 +868,19 @@ enum StreamRenderer {
             textBlock.needsLayout = true
         }
     }
+}
 
-    // In StreamRenderer
-    static func cleanup(controller: StreamMessageController) {
-        if let observer = windowResizeObserver {
-            NotificationCenter.default.removeObserver(observer)
-            windowResizeObserver = nil
+extension String {
+    func cleanedForStream() -> String {
+        var cleaned = replacingOccurrences(of: "\0", with: "")
+        cleaned = cleaned.filter { char in
+            let value = char.unicodeScalars.first?.value ?? 0
+            return (value >= 32 && value <= 126) || // ASCII printable
+                value == 10 || // Newline
+                value == 9 || // Tab
+                (value > 127 && value <= 0xFFFF) // Common Unicode
         }
+        return cleaned
     }
 }
 
@@ -879,28 +893,7 @@ extension NSLock {
     }
 }
 
-extension NSLocking {
-  func withLock<T>(_ block: () throws -> T) rethrows -> T { 
-        lock()
-        defer { unlock() }
-        return try block()
-   }
-}
-
 extension String {
-    func cleanedForStream() -> String {
-    // Only remove null bytes and clean truly unwanted characters
-        return self.replacingOccurrences(of: "\0", with: "")
-    }
-    
-    func fixMissingSpaces() -> String {
-        // This regex looks for lowercase letters followed by uppercase letters without space
-        return self.replacingOccurrences(
-            of: "([a-z])([A-Z])",
-            with: "$1 $2",
-            options: .regularExpression
-        )
-    }
     func normalizeMarkdownCodeBlocks() -> String {
         var result = self
         
@@ -926,24 +919,6 @@ extension String {
         )
         
         return result
-    }
-}
-
-extension String {
-    func trimmingTrailingWhitespace() -> String {
-        var characters = Array(self)
-        while characters.last?.isWhitespace == true && characters.last?.isNewline == false {
-            characters.removeLast()
-        }
-        return String(characters)
-    }
-
-    func trimmingLeadingWhitespace() -> String {
-        var characters = Array(self)
-        while characters.first?.isWhitespace == true && characters.first?.isNewline == false {
-            characters.removeFirst()
-        }
-        return String(characters)
     }
 }
 
