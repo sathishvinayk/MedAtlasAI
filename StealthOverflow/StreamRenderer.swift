@@ -327,16 +327,6 @@ class CodeBlockParser {
 enum StreamRenderer {
     static var windowResizeObserver: Any?
     static var debounceTimer: Timer?
-    
-    private static func updateAllCodeBlockHeights(in view: NSView, controller: StreamMessageController) {
-        // Recursively find all code block views and update their heights
-        for subview in view.subviews {
-            if subview.subviews.first?.subviews.first is NSTextView {
-                controller.updateCodeBlockHeight(subview as! StreamRenderer.CodeBlock)
-            }
-            updateAllCodeBlockHeights(in: subview, controller: controller)
-        }
-    }
 
     final class StreamMessageController: NSObject {
         private var resizeDebounceTimer: Timer?
@@ -344,7 +334,7 @@ enum StreamRenderer {
         private var isResizing = false
         let containerView: NSView
         let stackView: NSStackView
-        private let maxWidth: CGFloat
+        // let maxWidth: CGFloat
 
         private var _currentCodeBlock: CodeBlock?
         // let textBlock: TextBlock
@@ -367,54 +357,11 @@ enum StreamRenderer {
             set { stateLock.withLock { _isAnimating = newValue } }
         }
         
-        init(containerView: NSView, stackView: NSStackView, maxWidth: CGFloat) {
+        init(containerView: NSView, stackView: NSStackView) {
+            // self.maxWidth = maxWidth
             self.containerView = containerView
             self.stackView = stackView
-            self.maxWidth = maxWidth
             super.init()
-            setupResizeObserver()
-        }
-
-        private func setupResizeObserver() {
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(handleContainerResize),
-                name: NSView.frameDidChangeNotification,
-                object: containerView
-            )
-            containerView.postsFrameChangedNotifications = true
-        }
-
-        @objc func handleContainerResize() {
-            NSObject.cancelPreviousPerformRequests(
-                withTarget: self,
-                selector: #selector(performResizeLayout),
-                object: nil
-            )
-            perform(#selector(performResizeLayout), with: nil, afterDelay: 0.1)
-        }
-
-        @objc private func performResizeLayout() {
-            let contentWidth = containerView.bounds.width - 32
-            
-            NSAnimationContext.runAnimationGroup { [weak self] context in
-                context.duration = 0.2
-                context.allowsImplicitAnimation = true
-                
-                self?.stackView.arrangedSubviews.forEach { view in
-                    if let textBlock = view as? TextBlock {
-                        textBlock.updateLayout(forWidth: contentWidth, animated: true)
-                    } else if let codeBlock = view as? CodeBlock {
-                        codeBlock.updateLayout(forWidth: contentWidth, animated: true)
-                    }
-                }
-                
-                // Force layout of the entire hierarchy
-                self?.stackView.needsLayout = true
-                self?.stackView.superview?.needsLayout = true
-                self?.containerView.needsLayout = true
-                self?.stackView.layoutSubtreeIfNeeded()
-            }
         }
 
         // Update block creation methods
@@ -422,11 +369,10 @@ enum StreamRenderer {
             return TextBlock()  // No maxWidth needed
         }
 
-        private func createCodeBlock(language: String, content: String) -> CodeBlock {
-            return CodeBlock(content: content)  // No maxWidth needed
+        private func createCodeBlock(language: String) -> CodeBlock {
+            return CodeBlock(language: language) 
         }
 
-        
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
             processingQueue.async { [weak self] in
                 guard let self = self else { return }
@@ -449,10 +395,10 @@ enum StreamRenderer {
         
         private func commitUpdate(_ elements: [CodeBlockParser.ParsedElement], isComplete: Bool) {
             stateLock.withLock {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self, self.containerView.superview != nil else { return }
+                // DispatchQueue.main.async { [weak self] in
+                    // guard let self = self, self.containerView.superview != nil else { return }
                     
-                    let contentWidth = self.containerView.bounds.width - 32
+                    // let contentWidth = self.containerView.bounds.width - 32
                     
                     for element in elements {
                         switch element {
@@ -464,41 +410,29 @@ enum StreamRenderer {
                             
                             if let currentBlock = self._currentTextBlock {
                                 currentBlock.appendText(attributedString)
-                                currentBlock.updateLayout(forWidth: contentWidth, animated: true)
+                                // currentBlock.updateLayout(forWidth: contentWidth, animated: true)
                             } else {
                                 let textBlock = self.createTextBlock()
                                 textBlock.setText(attributedString)
                                 self.stackView.addArrangedSubview(textBlock)
-                                textBlock.updateLayout(forWidth: contentWidth)
+                                // textBlock.updateLayout(forWidth: contentWidth)
                                 self._currentTextBlock = textBlock
                             }
                             
                         case .codeBlock(let language, let content):
                             if self._currentCodeBlock == nil {
-                                let codeBlock = self.createCodeBlock(language: language, content: content)
+                                let codeBlock = self.createCodeBlock(language: language)
+                                codeBlock.setText(content)
                                 self.stackView.addArrangedSubview(codeBlock)
-                                codeBlock.updateLayout(forWidth: contentWidth)
                                 self._currentCodeBlock = codeBlock
                                 self._currentTextBlock = nil
                             } else {
-                                if let textView = self._currentCodeBlock?.textView {
-                                    textView.string = textView.string + content
-                                    self._currentCodeBlock?.updateLayout(forWidth: contentWidth)
+                                if let textView = self._currentCodeBlock {
+                                    textView.appendText(content)
+                                    // textView.string = textView.string + content
+                                    // self._currentCodeBlock?.updateLayout(forWidth: contentWidth)
                                 }
                             }
-                        // case .codeBlock(let language, let content):
-                        //     if let currentBlock = self._currentCodeBlock {
-                        //         // Update existing code block
-                        //         currentBlock.textView.string = currentBlock.textView.string + content
-                        //         currentBlock.updateLayout(forWidth: contentWidth)
-                        //     } else {
-                        //         // Create new code block
-                        //         let codeBlock = self.createCodeBlock(language: language, content: content)
-                        //         self.stackView.addArrangedSubview(codeBlock)
-                        //         codeBlock.updateLayout(forWidth: contentWidth)
-                        //         self._currentCodeBlock = codeBlock
-                        //         self._currentTextBlock = nil
-                        //     }
                         }
                     }
                     
@@ -506,44 +440,10 @@ enum StreamRenderer {
                         self.stop()
                         self._currentTextBlock = nil
                         self._currentCodeBlock = nil
-                        
-                        self.stackView.arrangedSubviews.forEach { view in
-                            if let textBlock = view as? TextBlock {
-                                textBlock.updateLayout(forWidth: contentWidth)
-                            } else if let codeBlock = view as? CodeBlock {
-                                codeBlock.updateLayout(forWidth: contentWidth)
-                            }
-                        }
                     } else {
                         self.startDisplayLinkIfNeeded()
                     }
-                }
-            }
-        }
-
-        fileprivate func updateCodeBlockHeight(_ codeBlock: CodeBlock, textView: NSTextView? = nil) {
-            let textView = textView ?? codeBlock.textView
-            let availableWidth = codeBlock.bounds.width - 16
-            
-            textView.textContainer?.containerSize = NSSize(
-                width: availableWidth,
-                height: .greatestFiniteMagnitude
-            )
-            
-            textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-            let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? .zero
-            let totalHeight = ceil(usedRect.height) + 16
-            
-            if let constraint = codeBlock.constraints.first(where: { $0.firstAttribute == .height }) {
-                constraint.constant = totalHeight
-            } else {
-                codeBlock.heightAnchor.constraint(equalToConstant: totalHeight).isActive = true
-            }
-            
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.1
-                context.allowsImplicitAnimation = true
-                codeBlock.superview?.layoutSubtreeIfNeeded()
+                // }
             }
         }
         
@@ -584,87 +484,154 @@ enum StreamRenderer {
 
     // MARK: - CodeBlock (updated implementation)
     class CodeBlock: NSView {
-        private let bubble = NSView()
-//        let maxWidth: CGFloat
-        let textView: NSTextView
+        private let bubbleView = NSView()
+        private let language: String  // ADD THIS
+        private(set) var textView: NSTextView
         private var heightConstraint: NSLayoutConstraint?
-        
-        init(content: String) {
-            // Initialize with zero width - will resize dynamically
-            let textContainer = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-            textContainer.widthTracksTextView = true
-            textContainer.lineFragmentPadding = 0
+        private let maxWidth: CGFloat
+        private var isUpdatingLayout = false
+        private var lastWindowState: (frame: NSRect, isZoomed: Bool)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observeWindowState()
+        }
+
+        private func observeWindowState() {
+            guard let window = window else { return }
             
-            let layoutManager = NSLayoutManager()
-            layoutManager.addTextContainer(textContainer)
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(windowDidChangeState),
+                name: NSWindow.didResizeNotification,
+                object: window
+            )
+        }
+
+        @objc private func windowDidChangeState() {
+            guard let window = window else { return }
             
+            let currentState = (window.frame, window.isZoomed)
+            if let lastState = lastWindowState, lastState == currentState {
+                return
+            }
+            
+            lastWindowState = currentState
+            
+            // Force a layout update when window state changes
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.allowsImplicitAnimation = true
+                self.updateHeight()
+            }
+        }
+        override func layout() {
+            super.layout()
+            
+            // Calculate available width (subtracting 10 for margins + 16 for internal padding)
+            let availableWidth = max(bounds.width - 52, 150) // Never go below 150
+            
+            textView.textContainer?.containerSize = NSSize(
+                width: availableWidth,
+                height: .greatestFiniteMagnitude
+            )
+            
+            updateHeight()
+        }
+
+        init(language: String) {
+            self.maxWidth = calculateMaxWidth()
+            self.language = language 
+            // self.maxWidth = maxWidth
+
             let textStorage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
             textStorage.addLayoutManager(layoutManager)
-            
-            textView = NSTextView(frame: .zero, textContainer: textContainer)
+            let textContainer = NSTextContainer(size: CGSize(width: self.maxWidth, height: CGFloat.greatestFiniteMagnitude))
+            layoutManager.addTextContainer(textContainer)
+
+            self.textView = NSTextView(frame: .zero, textContainer: textContainer)
             super.init(frame: .zero)
             
-            setupViews(content: content)
+            setupView()
         }
         
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
         }
         
-        private func setupViews(content: String) {
-            translatesAutoresizingMaskIntoConstraints = false
-            setContentHuggingPriority(.required, for: .vertical)
-            setContentCompressionResistancePriority(.required, for: .vertical)
-            
-            // Bubble setup
-            bubble.translatesAutoresizingMaskIntoConstraints = false
-            bubble.wantsLayer = true
-            bubble.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            bubble.layer?.cornerRadius = 6
-            bubble.layer?.borderWidth = 1
-            bubble.layer?.borderColor = NSColor.separatorColor.cgColor
-            
+        private func setupView() {
+            bubbleView.translatesAutoresizingMaskIntoConstraints = false
+            bubbleView.wantsLayer = true
+            bubbleView.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            bubbleView.layer?.cornerRadius = 6
+            bubbleView.layer?.borderWidth = 1
+            bubbleView.layer?.borderColor = NSColor.separatorColor.cgColor
+
             // TextView setup
             textView.translatesAutoresizingMaskIntoConstraints = false
             textView.isEditable = false
             textView.isSelectable = true
             textView.drawsBackground = false
+            textView.textContainerInset = NSSize(width: 8, height: 8)
+            textView.textContainer?.lineFragmentPadding = 0
+            textView.textContainer?.widthTracksTextView = true
+            textView.isHorizontallyResizable = false
+
             textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
             textView.textColor = NSColor.textColor
-            textView.string = content
-            textView.textContainerInset = NSSize(width: 8, height: 8)
-            textView.textContainer?.widthTracksTextView = true
             
-            addSubview(bubble)
-            bubble.addSubview(textView)
+            addSubview(bubbleView)
+            bubbleView.addSubview(textView)
             
             NSLayoutConstraint.activate([
-                bubble.leadingAnchor.constraint(equalTo: leadingAnchor),
-                bubble.trailingAnchor.constraint(equalTo: trailingAnchor),
-                bubble.topAnchor.constraint(equalTo: topAnchor, constant: 2),
-                bubble.bottomAnchor.constraint(equalTo: bottomAnchor),
-                
-                textView.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
-                textView.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
-                textView.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
-                textView.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
+                bubbleView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                bubbleView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                bubbleView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+                bubbleView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+                textView.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
+                textView.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
+                textView.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 8),
+                textView.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -8),
+            
+                widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
             ])
         }
+
+        func appendText(_ newText: String) {
+            guard let storage = textView.textStorage else { return }
+            
+            storage.beginEditing()
+            storage.append(NSAttributedString(string: newText, attributes: TextAttributes.codeBlock))
+            storage.endEditing()
+
+            // Trigger layout without recursion
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                context.allowsImplicitAnimation = false
+                self.updateHeight()
+            }
+        }
         
-        func updateLayout(forWidth width: CGFloat, animated: Bool = false) {
-            // Calculate available width minus padding
-            let availableWidth = width - 32 // Increased from 16 to account for bubble padding
+        func setText(_ content: String) {
+            let attrString = NSAttributedString(string: content, attributes: TextAttributes.codeBlock)
+            textView.textStorage?.setAttributedString(attrString)
+            updateHeight()
+        }
+        
+        func updateHeight() {
+            guard !isUpdatingLayout,
+                let container = textView.textContainer,
+                let layoutManager = textView.layoutManager else { return }
             
-            // Force text container to use the new width
-            textView.textContainer?.size.width = availableWidth
-            
-            // Invalidate layout and force update
-            textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+            isUpdatingLayout = true
+            defer { isUpdatingLayout = false }
             
             // Calculate required height
-            let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? .zero
-            let verticalPadding = textView.textContainerInset.height + 16 // Additional padding for bubble
-            let totalHeight = ceil(usedRect.height) + verticalPadding
+            layoutManager.ensureLayout(for: container)
+            let usedRect = layoutManager.usedRect(for: container)
+            let totalHeight = ceil(usedRect.height) + textView.textContainerInset.height * 2
             
             // Update height constraint
             if let heightConstraint = heightConstraint {
@@ -674,61 +641,97 @@ enum StreamRenderer {
                 heightConstraint?.isActive = true
             }
             
-            // Animate if needed
-            if animated {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.15
-                    context.allowsImplicitAnimation = true
-                    self.superview?.layoutSubtreeIfNeeded()
-                }
-            } else {
-                // Force immediate layout update
-                self.needsUpdateConstraints = true
-                self.needsLayout = true
-                self.superview?.needsLayout = true
-                self.superview?.superview?.needsLayout = true
+            // Safely request superview layout
+            if let superview = superview, superview.inLiveResize {
+                superview.needsLayout = true
             }
         }
     }
 
     // MARK: - TextBlock (Fixed)
     class TextBlock: NSView {
-        let textView: NSTextView
+        private(set) var textView: NSTextView
         private var heightConstraint: NSLayoutConstraint?
+        private let maxWidth: CGFloat
+        private var isUpdatingLayout: Bool = false
+        private var lastWindowState: (frame: NSRect, isZoomed: Bool)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observeWindowState()
+        }
+
+        private func observeWindowState() {
+            guard let window = window else { return }
+            
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(windowDidChangeState),
+                name: NSWindow.didResizeNotification,
+                object: window
+            )
+        }
+
+        @objc private func windowDidChangeState() {
+            guard let window = window else { return }
+            
+            let currentState = (window.frame, window.isZoomed)
+            if let lastState = lastWindowState, lastState == currentState {
+                return
+            }
+            
+            lastWindowState = currentState
+            
+            // Force a layout update when window state changes
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.allowsImplicitAnimation = true
+                self.updateHeight()
+            }
+        }
+        override func layout() {
+            super.layout()
+            
+            // Calculate available width (subtracting 10 for margins + 16 for internal padding)
+            let availableWidth = max(bounds.width - 52, 150) // Never go below 150
+            
+            textView.textContainer?.containerSize = NSSize(
+                width: availableWidth,
+                height: .greatestFiniteMagnitude
+            )
+            
+            updateHeight()
+        }
         
         init() {
+            self.maxWidth = calculateMaxWidth()
+
             // Initialize with zero width - will resize dynamically
-            let textContainer = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-            textContainer.widthTracksTextView = true
-            textContainer.lineFragmentPadding = 0
-            
-            let layoutManager = NSLayoutManager()
-            layoutManager.addTextContainer(textContainer)
-            
             let textStorage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
             textStorage.addLayoutManager(layoutManager)
+            let textContainer = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+            layoutManager.addTextContainer(textContainer)    
             
-            textView = NSTextView(frame: .zero, textContainer: textContainer)
+            self.textView = NSTextView(frame: .zero, textContainer: textContainer)
+
             super.init(frame: .zero)
-            
-            setupViews()
+            setupView()
         }
         
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
         }
         
-        private func setupViews() {
-            translatesAutoresizingMaskIntoConstraints = false
-            setContentHuggingPriority(.defaultHigh, for: .vertical)
-            setContentCompressionResistancePriority(.required, for: .vertical)
-            
+        private func setupView() {
             textView.translatesAutoresizingMaskIntoConstraints = false
             textView.isEditable = false
             textView.isSelectable = true
             textView.drawsBackground = false
-            textView.textContainerInset = NSSize(width: 0, height: 4)
+            textView.textContainerInset = NSSize(width: 8, height: 8)
+            textView.textContainer?.lineFragmentPadding = 0
             textView.textContainer?.widthTracksTextView = true
+            textView.isHorizontallyResizable = false
             
             addSubview(textView)
             
@@ -736,34 +739,41 @@ enum StreamRenderer {
                 textView.leadingAnchor.constraint(equalTo: leadingAnchor),
                 textView.trailingAnchor.constraint(equalTo: trailingAnchor),
                 textView.topAnchor.constraint(equalTo: topAnchor),
-                textView.bottomAnchor.constraint(equalTo: bottomAnchor)
+                textView.bottomAnchor.constraint(equalTo: bottomAnchor),
+                widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
             ])
         }
 
         func appendText(_ newText: NSAttributedString) {
+            guard textView.textStorage != nil else { return }
             // Append the new attributed text
             textView.textStorage?.append(newText)
             
-            // Update layout without animation to prevent jumping
-            let currentWidth = textView.textContainer?.size.width ?? 0
-            updateLayout(forWidth: currentWidth, animated: false)
+            // Trigger layout without recursion
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                context.allowsImplicitAnimation = false
+                self.updateHeight()
+            }
         }
         
         func setText(_ attributedString: NSAttributedString) {
             textView.textStorage?.setAttributedString(attributedString)
+            self.updateHeight()
         }
-        
-        func updateLayout(forWidth width: CGFloat, animated: Bool = false) {
-            // Force text container to use the new width
-            textView.textContainer?.size.width = width
+
+        func updateHeight() {
+            guard !isUpdatingLayout,
+                let container = textView.textContainer,
+                let layoutManager = textView.layoutManager else { return }
             
-            // Invalidate layout and force update
-            textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+            isUpdatingLayout = true
+            defer { isUpdatingLayout = false }
             
             // Calculate required height
-            let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? .zero
-            let verticalPadding = textView.textContainerInset.height
-            let totalHeight = ceil(usedRect.height) + verticalPadding
+            layoutManager.ensureLayout(for: container)
+            let usedRect = layoutManager.usedRect(for: container)
+            let totalHeight = ceil(usedRect.height) + textView.textContainerInset.height * 2
             
             // Update height constraint
             if let heightConstraint = heightConstraint {
@@ -773,19 +783,9 @@ enum StreamRenderer {
                 heightConstraint?.isActive = true
             }
             
-            // Animate if needed
-            if animated {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.15
-                    context.allowsImplicitAnimation = true
-                    self.superview?.layoutSubtreeIfNeeded()
-                }
-            } else {
-                // Force immediate layout update
-                self.needsUpdateConstraints = true
-                self.needsLayout = true
-                self.superview?.needsLayout = true
-                self.superview?.superview?.needsLayout = true
+            // Safely request superview layout
+            if let superview = superview, superview.inLiveResize {
+                superview.needsLayout = true
             }
         }
     }
@@ -796,8 +796,6 @@ enum StreamRenderer {
         
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        // container.setContentHuggingPriority(.required, for: .vertical)
-        // container.setContentCompressionResistancePriority(.required, for: .vertical)
 
         let bubble = NSView()
         bubble.translatesAutoresizingMaskIntoConstraints = false
@@ -813,11 +811,6 @@ enum StreamRenderer {
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.distribution = .fill
         stack.alignment = .leading
-        stack.setHuggingPriority(.required, for: .vertical)
-        stack.setContentCompressionResistancePriority(.required, for: .vertical)
-        // for view in stack.arrangedSubviews {
-        //     view.setContentCompressionResistancePriority(.required, for: .vertical)
-        // }
 
         bubble.addSubview(stack)
 
@@ -828,36 +821,77 @@ enum StreamRenderer {
         let controller = StreamMessageController(
             containerView: container, 
             stackView: stack, 
-            maxWidth: maxWidth
         )
 
+        let bubbleWidth = bubble.widthAnchor.constraint(equalTo: container.widthAnchor, constant: -10)
+        bubbleWidth.priority = .defaultHigh
+
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -8),
-            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 8),
-            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -8),
+            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 6),
+            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -6),
+            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 6),
+            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -6),
             
-            bubble.topAnchor.constraint(equalTo: container.topAnchor),
-            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+
+            bubbleWidth,
+            bubble.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
+            bubble.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
+
             bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
-            
-            bubble.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
-            bubble.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
         ])
 
-        // Dynamic width constraint
-        let widthConstraint = bubble.widthAnchor.constraint(equalTo: container.widthAnchor, constant: -16)
-        widthConstraint.priority = .defaultHigh
-        widthConstraint.isActive = true
+        _ = setupWindowResizeHandler(for: bubble, container: container)
 
         return (container, controller)
     }
 
     private static func calculateMaxWidth() -> CGFloat {
-        // Calculate based on window size or screen size
-        guard let screen = NSScreen.main else { return 600 }
-        return min(800, screen.visibleFrame.width * 0.8)
+        let screenWidth = NSScreen.main?.visibleFrame.width ?? 800
+        return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
+    }
+
+    private static func setupWindowResizeHandler(for bubble: NSView, container: NSView) -> Any? {
+        guard let window = bubble.window else { return nil }
+        
+        return NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification,
+            object: window,
+            queue: .main
+        ) { _ in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.allowsImplicitAnimation = true
+                
+                // Update the bubble's width constraint
+                if let constraint = bubble.constraints.first(where: {
+                    $0.firstAttribute == .width &&
+                    $0.secondAttribute == .width &&
+                    $0.secondItem === container
+                }) {
+                    constraint.constant = -5 // Maintain the 10pt offset
+                }
+                
+                container.needsLayout = true
+                container.layoutSubtreeIfNeeded()
+            }
+        }
+    }
+
+    private static func updateStackLayout(_ stack: NSStackView) {
+        stack.arrangedSubviews.forEach { view in
+            guard let textBlock = view.subviews.first?.subviews.first as? TextBlock else { return }
+            
+            // Force a layout update
+            textBlock.textView.textContainer?.containerSize = NSSize(
+                width: textBlock.bounds.width,
+                height: .greatestFiniteMagnitude
+            )
+            textBlock.needsUpdateConstraints = true
+            textBlock.needsLayout = true
+        }
     }
 }
 
