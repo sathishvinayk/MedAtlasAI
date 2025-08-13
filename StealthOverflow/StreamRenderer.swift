@@ -568,6 +568,14 @@ enum StreamRenderer {
             bubbleView.layer?.borderWidth = 1
             bubbleView.layer?.borderColor = NSColor.separatorColor.cgColor
 
+            // Create the language label
+            let languageLabel = NSTextField(labelWithString: language.isEmpty ? "code" : language)
+            languageLabel.translatesAutoresizingMaskIntoConstraints = false
+            languageLabel.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+            languageLabel.textColor = NSColor.secondaryLabelColor
+            languageLabel.alignment = .right
+
+
             // TextView setup
             textView.translatesAutoresizingMaskIntoConstraints = false
             textView.isEditable = false
@@ -583,12 +591,19 @@ enum StreamRenderer {
             
             addSubview(bubbleView)
             bubbleView.addSubview(textView)
+            bubbleView.addSubview(languageLabel)
             
             NSLayoutConstraint.activate([
                 bubbleView.leadingAnchor.constraint(equalTo: leadingAnchor),
                 bubbleView.trailingAnchor.constraint(equalTo: trailingAnchor),
                 bubbleView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
                 bubbleView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+                // Language label constraints
+                languageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 4),
+                languageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
+                languageLabel.leadingAnchor.constraint(greaterThanOrEqualTo: bubbleView.leadingAnchor, constant: 8),
+                
 
                 textView.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 8),
                 textView.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -8),
@@ -729,10 +744,12 @@ enum StreamRenderer {
             textView.isEditable = false
             textView.isSelectable = true
             textView.drawsBackground = false
+            textView.backgroundColor = .clear
             textView.textContainerInset = NSSize(width: 8, height: 8)
             textView.textContainer?.lineFragmentPadding = 0
             textView.textContainer?.widthTracksTextView = true
             textView.isHorizontallyResizable = false
+            textView.textColor = .labelColor
             
             addSubview(textView)
             
