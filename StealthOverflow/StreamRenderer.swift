@@ -334,7 +334,7 @@ enum StreamRenderer {
         private var isResizing = false
         let containerView: NSView
         let stackView: NSStackView
-        // let maxWidth: CGFloat
+        let maxWidth: CGFloat
 
         private var _currentCodeBlock: CodeBlock?
         // let textBlock: TextBlock
@@ -357,20 +357,21 @@ enum StreamRenderer {
             set { stateLock.withLock { _isAnimating = newValue } }
         }
         
-        init(containerView: NSView, stackView: NSStackView) {
-            // self.maxWidth = maxWidth
+        init(containerView: NSView, stackView: NSStackView, maxWidth: CGFloat) {
+            self.maxWidth = maxWidth
             self.containerView = containerView
             self.stackView = stackView
+
             super.init()
         }
 
         // Update block creation methods
         private func createTextBlock() -> TextBlock {
-            return TextBlock()  // No maxWidth needed
+            return TextBlock(maxWidth: self.maxWidth)  // No maxWidth needed
         }
 
         private func createCodeBlock(language: String) -> CodeBlock {
-            return CodeBlock(language: language) 
+            return CodeBlock(language: language, maxWidth: self.maxWidth) 
         }
 
         func appendStreamingText(_ chunk: String, isComplete: Bool = false) {
@@ -539,15 +540,14 @@ enum StreamRenderer {
             updateHeight()
         }
 
-        init(language: String) {
-            self.maxWidth = calculateMaxWidth()
+        init(language: String, maxWidth: CGFloat) {
             self.language = language 
-            // self.maxWidth = maxWidth
+            self.maxWidth = maxWidth
 
             let textStorage = NSTextStorage()
             let layoutManager = NSLayoutManager()
             textStorage.addLayoutManager(layoutManager)
-            let textContainer = NSTextContainer(size: CGSize(width: self.maxWidth, height: CGFloat.greatestFiniteMagnitude))
+            let textContainer = NSTextContainer(size: NSSize(width: self.maxWidth, height: CGFloat.greatestFiniteMagnitude))
             layoutManager.addTextContainer(textContainer)
 
             self.textView = NSTextView(frame: .zero, textContainer: textContainer)
@@ -703,14 +703,15 @@ enum StreamRenderer {
             updateHeight()
         }
         
-        init() {
-            self.maxWidth = calculateMaxWidth()
+        init(maxWidth: CGFloat) {
+            // self.maxWidth = calculateMaxWidth()
+            self.maxWidth = maxWidth
 
             // Initialize with zero width - will resize dynamically
             let textStorage = NSTextStorage()
             let layoutManager = NSLayoutManager()
             textStorage.addLayoutManager(layoutManager)
-            let textContainer = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+            let textContainer = NSTextContainer(size: NSSize(width: self.maxWidth, height: CGFloat.greatestFiniteMagnitude))
             layoutManager.addTextContainer(textContainer)    
             
             self.textView = NSTextView(frame: .zero, textContainer: textContainer)
@@ -821,6 +822,7 @@ enum StreamRenderer {
         let controller = StreamMessageController(
             containerView: container, 
             stackView: stack, 
+            maxWidth: maxWidth
         )
 
         let bubbleWidth = bubble.widthAnchor.constraint(equalTo: container.widthAnchor, constant: -10)
@@ -850,7 +852,7 @@ enum StreamRenderer {
 
     private static func calculateMaxWidth() -> CGFloat {
         let screenWidth = NSScreen.main?.visibleFrame.width ?? 800
-        return min(screenWidth * 0.7, 800) // 70% of screen or 800px max
+        return min(screenWidth * 1, 800) // 70% of screen or 800px max
     }
 
     private static func setupWindowResizeHandler(for bubble: NSView, container: NSView) -> Any? {
