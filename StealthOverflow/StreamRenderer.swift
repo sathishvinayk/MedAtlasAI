@@ -601,7 +601,6 @@ enum StreamRenderer {
                 baseAttributes: TextAttributes.codeBlock
             )
             
-            
             storage.beginEditing()
             storage.append(highlightedText)
             storage.endEditing()

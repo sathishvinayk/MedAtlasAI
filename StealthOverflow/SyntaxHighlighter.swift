@@ -115,7 +115,7 @@ extension LanguageSyntax {
             
         case .c, .cpp, .rust:
             languageSpecific = [
-                (pattern: #"\b(int|float|double|char|void|bool|auto|const|mutable|unsigned|signed|short|long|struct|enum|union|typedef|template|typename|namespace|using|extern|static|register|volatile)\b"#, 
+                (pattern: #"\b(int|float|double|char|void|bool|auto|const|mutable|unsigned|signed|short|long|struct|class|enum|union|typedef|template|typename|namespace|using|extern|static|register|volatile)\b"#, 
                  attributes: [.foregroundColor: NSColor.codeType]),
                 (pattern: #"\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|try|catch|throw|noexcept|constexpr|decltype|auto|sizeof|alignof|alignas|concept|requires)\b"#, 
                  attributes: [.foregroundColor: NSColor.codeKeyword])

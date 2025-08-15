@@ -7,9 +7,11 @@ struct ChatUIBuilder {
         let textView: NSTextView
         let inputScroll: NSScrollView
         let inputHeightConstraint: NSLayoutConstraint
+        let sendButton: NSButton
+        let stopButton: NSButton  // Add this
     }
 
-    static func buildChatUI(in container: NSView, delegate: NSTextViewDelegate, target: AnyObject, sendAction: Selector) -> ChatUI {
+    static func buildChatUI(in container: NSView, delegate: NSTextViewDelegate, target: AnyObject, sendAction: Selector, stopAction: Selector) -> ChatUI {
         let titleLabel = NSTextField(labelWithString: "Stealth Interview")
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = NSFont.boldSystemFont(ofSize: 14)
@@ -86,7 +88,7 @@ struct ChatUIBuilder {
         textView.translatesAutoresizingMaskIntoConstraints = false
 
         inputScroll.documentView = textView
-
+        
         let sendButton = NSButton(title: "➤", target: target, action: sendAction)
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         sendButton.bezelStyle = .inline
@@ -94,13 +96,34 @@ struct ChatUIBuilder {
         sendButton.setButtonType(.momentaryPushIn)
         sendButton.isBordered = false
         sendButton.wantsLayer = true
-        sendButton.contentTintColor = .systemBlue
+        sendButton.contentTintColor = .disabledControlTextColor
+        sendButton.isEnabled = false
         sendButton.toolTip = "Send"
+
+        //  // Update send button state when text changes
+        // NotificationCenter.default.addObserver(forName: NSText.didChangeNotification, object: textView, queue: .main) { _ in
+        //     let hasText = !textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        //     sendButton.isEnabled = hasText
+        //     sendButton.contentTintColor = hasText ? .systemBlue : .disabledControlTextColor
+        // }
+
+        // Create stop button (initially hidden)
+        let stopButton = NSButton(title: "■", target: target, action: stopAction)
+        stopButton.translatesAutoresizingMaskIntoConstraints = false
+        stopButton.bezelStyle = .inline
+        stopButton.font = NSFont.systemFont(ofSize: 14)
+        stopButton.setButtonType(.momentaryPushIn)
+        stopButton.isBordered = false
+        stopButton.wantsLayer = true
+        stopButton.contentTintColor = .systemRed
+        stopButton.toolTip = "Stop"
+        stopButton.isHidden = true
 
         container.addSubview(scrollView)
         container.addSubview(inputContainer)
         inputContainer.addSubview(inputScroll)
         inputContainer.addSubview(sendButton)
+        inputContainer.addSubview(stopButton)
 
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
@@ -125,6 +148,12 @@ struct ChatUIBuilder {
             inputScroll.bottomAnchor.constraint(equalTo: inputContainer.bottomAnchor, constant: -6),
             inputScroll.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
 
+            // Position buttons
+            stopButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
+            stopButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
+            stopButton.widthAnchor.constraint(equalToConstant: 22),
+            stopButton.heightAnchor.constraint(equalToConstant: 22),
+            
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 22),
@@ -146,6 +175,13 @@ struct ChatUIBuilder {
         inputHeightConstraint.priority = .defaultHigh
         inputHeightConstraint.isActive = true
 
-        return ChatUI(messagesStack: messagesStack, textView: textView, inputScroll: inputScroll, inputHeightConstraint: inputHeightConstraint)
+        return ChatUI(
+            messagesStack: messagesStack, 
+            textView: textView, 
+            inputScroll: inputScroll, 
+            inputHeightConstraint: inputHeightConstraint, 
+            sendButton: sendButton,
+            stopButton: stopButton
+        )
     }
 }

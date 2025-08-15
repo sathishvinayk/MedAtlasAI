@@ -1,9 +1,26 @@
 import Foundation
 
 class ChatApiService: NSObject, URLSessionDataDelegate {
-    private var taskToHandler: [URLSessionDataTask: (String) -> Void] = [:]
+    private var activeTask: URLSessionDataTask?
+    private var completionHandler: ((String) -> Void)?
+    private var session: URLSession = URLSession.shared
+    
+    override init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 300
+
+        super.init()
+        self.session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }
+    
+    deinit {
+        cancelCurrentRequest()
+    }
 
     public func fetchGPTResponse(for prompt: String, onUpdate: @escaping (String) -> Void) {
+        cancelCurrentRequest() // Cancel any existing request first
+        
         let OpenRouterKey = "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"
         let url = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
         var request = URLRequest(url: url)
@@ -22,82 +39,60 @@ class ChatApiService: NSObject, URLSessionDataDelegate {
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: requestBody)
         
-        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-        let task = session.dataTask(with: request)
-        taskToHandler[task] = onUpdate
-        task.resume()
-        // URLSession.shared.dataTask(with: request) { data, response, error in
-        //     if let error = error {
-        //         DispatchQueue.main.async {
-        //             completion("Network error: \(error.localizedDescription)")
-        //         }
-        //         return
-        //     }
-
-        //     guard let data = data else {
-        //         DispatchQueue.main.async {
-        //             completion("No data received.")
-        //         }
-        //         return
-        //     }
-
-        //     // 💡 Print raw response for inspection
-        //     if let raw = String(data: data, encoding: .utf8) {
-        //         print("Raw GPT response:\n\(raw)")
-        //     }
-
-        //     do {
-        //         if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-        //            let choices = json["choices"] as? [[String: Any]],
-        //            let message = choices.first?["message"] as? [String: Any],
-        //            let content = message["content"] as? String {
-        //             DispatchQueue.main.async {
-        //                 completion(content.trimmingCharacters(in: .whitespacesAndNewlines))
-        //             }
-        //         } else {
-        //             DispatchQueue.main.async {
-        //                 completion("Error parsing response (missing expected fields).")
-        //             }
-        //         }
-        //     } catch {
-        //         DispatchQueue.main.async {
-        //             completion("JSON parse error: \(error.localizedDescription)")
-        //         }
-        //     }
-        // }.resume()
+        self.completionHandler = onUpdate
+        activeTask = session.dataTask(with: request)
+        activeTask?.resume()
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard let chunk = String(data: data, encoding: .utf8) else { return }
-
-        let lines = chunk.components(separatedBy: "\n")
+        guard dataTask == activeTask, let handler = completionHandler else { return }
+        
+        let chunk = String(data: data, encoding: .utf8) ?? ""
+        let lines = chunk.components(separatedBy: "\n").filter { !$0.isEmpty }
+        
         for line in lines {
-            if line.hasPrefix("data: ") {
-                let jsonString = line.replacingOccurrences(of: "data: ", with: "")
-                if jsonString == "[DONE]" {
-                    if let handler = taskToHandler[dataTask] {
-                        DispatchQueue.main.async {
-                            handler("[STREAM_DONE]")
-                        }
+            guard line.hasPrefix("data: ") else { continue }
+            
+            let jsonString = line.replacingOccurrences(of: "data: ", with: "")
+            if jsonString == "[DONE]" {
+                DispatchQueue.main.async {
+                    handler("[STREAM_DONE]")
+                }
+                cleanUp()
+                return
+            }
+            
+            do {
+                let jsonData = jsonString.data(using: .utf8) ?? Data()
+                let parsed = try JSONDecoder().decode(OpenAIStreamChunk.self, from: jsonData)
+                if let content = parsed.choices.first?.delta.content {
+                    DispatchQueue.main.async {
+                        handler(content)
                     }
-                    // 🧼 Remove handler after done
-                    taskToHandler.removeValue(forKey: dataTask)
-                    return
                 }
-
-                if let jsonData = jsonString.data(using: .utf8),
-                    let parsed = try? JSONDecoder().decode(OpenAIStreamChunk.self, from: jsonData),
-                    let content = parsed.choices.first?.delta.content,
-                    let handler = taskToHandler[dataTask] {
-                        DispatchQueue.main.async {
-                            handler(content)
-                        }
-                    
-                }
+            } catch {
+                print("Error parsing stream chunk: \(error)")
             }
         }
     }
-
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            print("Streaming task completed with error: \(error.localizedDescription)")
+        }
+        cleanUp()
+    }
+    
+    func cancelCurrentRequest() {
+        activeTask?.cancel()
+        cleanUp()
+    }
+    
+    private func cleanUp() {
+        activeTask = nil
+        completionHandler = nil
+    }
+    
     public func mockResponse(for text: String) -> String {
         return "This is a mock response to: \"\(text)\""
     }

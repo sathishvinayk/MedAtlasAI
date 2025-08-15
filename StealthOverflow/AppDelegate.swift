@@ -13,6 +13,8 @@ func injectHotReload() {
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     var windowManager: WindowManager!
+    var sendButton: NSButton!
+    var stopButton: NSButton!
 
     var chatApiService = ChatApiService()
     var chatController: ChatController!
@@ -73,16 +75,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         let result = windowManager.createWindow(delegate: nil)
         window = result.window
         
-        let ui = ChatUIBuilder.buildChatUI(in: result.contentView, delegate: self, target: self, sendAction: #selector(AppDelegate.handleInput))
+        let ui = ChatUIBuilder.buildChatUI(
+            in: result.contentView, 
+            delegate: self, 
+            target: self, 
+            sendAction: #selector(AppDelegate.handleInput),
+            stopAction: #selector(AppDelegate.handleStop)
+        )
         messagesStack = ui.messagesStack
         textView = ui.textView
         inputScroll = ui.inputScroll
         inputHeightConstraint = ui.inputHeightConstraint
+        sendButton = ui.sendButton
+        stopButton = ui.stopButton
 
         chatController = ChatController(
             messagesStack: messagesStack,
             textView: textView,
-            inputHeightConstraint: inputHeightConstraint
+            inputHeightConstraint: inputHeightConstraint,
+            sendButton: sendButton,
+            stopButton: stopButton
         )
         chatController.textDidChange()
         DispatchQueue.main.async {
@@ -92,6 +104,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
     @objc func handleInput() {
         chatController.handleInput()
+        updateSendButtonState()
+    }
+
+     @objc func handleStop() {
+        chatController.stopStreaming()
+    }
+
+    private func updateSendButtonState() {
+        let hasText = !textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        sendButton.isEnabled = hasText
+        sendButton.contentTintColor = hasText ? .systemBlue : .disabledControlTextColor
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
