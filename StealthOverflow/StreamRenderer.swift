@@ -76,7 +76,8 @@ class CodeBlockParser {
         "swift", "python", "javascript", "typescript", "java",
         "kotlin", "c", "cpp", "csharp", "go", "ruby", "php",
         "rust", "scala", "dart", "r", "objectivec", "bash", "sh",
-        "json", "yaml", "xml", "html", "css", "markdown", "text"
+        "json", "yaml", "xml", "html", "css", "markdown", "text",
+        "pascal"
     ]
     
     // MARK: - Public Interface
@@ -182,8 +183,25 @@ class CodeBlockParser {
                 if let newlineIndex = remainingLine.firstIndex(of: "\n") {
                     let languagePart = languageBuffer + String(remainingLine[..<newlineIndex])
                     languageBuffer = ""
-                    let validatedLanguage = validateAndAutocorrectLanguage(languagePart)
+                    print("Language part buffering -> \(languagePart)")
+        
+                    // First try to get the complete language name if it exists
+                    let rawLanguage = languagePart
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    print("Raw Language -> \(rawLanguage)")
+
+                    // Check if we have a complete valid language first
+                    let validatedLanguage: String
+                    if Self.validLanguages.contains(rawLanguage.lowercased()) {
+                        validatedLanguage = rawLanguage.lowercased()
+                    } else {
+                        // If not, try to autocorrect partial/incomplete language names
+                        validatedLanguage = validateAndAutocorrectLanguage(rawLanguage)
+                    }
                     
+                    print("validatedLanguage -> \(validatedLanguage)")
+
                     // Skip past the language and newline
                     remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
                     parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
@@ -197,6 +215,7 @@ class CodeBlockParser {
                 
             case .inCodeBlock(let language, let openingBackticks):
                 if let (endRange, _) = findClosingBackticks(in: remainingLine, openingBackticks: openingBackticks) {
+                    print("language inCode block if -> \(language)")
                     let completeContent = codeBlockBuffer + String(remainingLine[..<endRange.lowerBound])
                     codeBlockBuffer = ""
 
@@ -219,12 +238,13 @@ class CodeBlockParser {
                         remainingLine.removeFirst()
                     }
                 } else {
+                    print("language inCode block else -> \(language)")
                     // For partial code blocks, return incremental updates
                     if !codeBlockBuffer.isEmpty {
-                        output.append(.codeBlock(language: "", content: codeBlockBuffer))
+                        output.append(.codeBlock(language: language, content: codeBlockBuffer))
                         codeBlockBuffer = ""
                     }
-                    output.append(.codeBlock(language: "", content: remainingLine))
+                    output.append(.codeBlock(language: language, content: remainingLine))
                     remainingLine = ""
                 }
 
@@ -291,18 +311,46 @@ class CodeBlockParser {
             "n": "python",
             "ja": "java",
             "js": "javascript",
+            "ts": "typescript",
             "c++": "cpp",
-            "c#": "csharp"
+            "c#": "csharp",
+            "py": "python",
+            "rb": "ruby",
+            "sh": "bash",
+            "htm": "html",
+            "yml": "yaml",
+            "pas": "pascal",
         ]
         
-        let normalized = language.lowercased()
+        // Handle empty or whitespace language
+        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
         
-        // Check if we have a direct autocorrection
+        let normalized = trimmed.lowercased()
+        
+        // 1. Check if it's a common prefix of any valid language
+        for validLang in Self.validLanguages {
+            if validLang.hasPrefix(normalized) {
+                return validLang
+            }
+        }
+        
+        // 2. Check direct autocorrections
         if let corrected = autocorrections[normalized] {
             return corrected
         }
         
-        return Self.validLanguages.contains(normalized) ? normalized : ""
+        // 3. Check if it's a file extension match
+        if normalized.count <= 5 {  // Only check short strings as potential extensions
+            for validLang in Self.validLanguages {
+                if validLang == normalized {
+                    return validLang
+                }
+            }
+        }
+        
+        // Default to empty string if no match
+        return ""
     }
     
     private func countConsecutiveBackticks(_ text: String) -> Int? {
@@ -312,14 +360,6 @@ class CodeBlockParser {
     
     private func createRegularText(_ text: String) -> NSAttributedString {
         return NSAttributedString(string: text, attributes: TextAttributes.regular)
-    }
-    
-    private func createCodeBlockContent(_ text: String) -> NSAttributedString {
-        let cleanedText = text
-            .replacingOccurrences(of: "\t", with: "    ")
-            .replacingOccurrences(of: "\r\n", with: "\n")
-        
-        return NSAttributedString(string: cleanedText, attributes: TextAttributes.codeBlock)
     }
 }
 
@@ -544,6 +584,8 @@ enum StreamRenderer {
             self.language = language 
             self.maxWidth = maxWidth
 
+            print("Codeblock language -> \(language)")
+
             let textStorage = NSTextStorage()
             let layoutManager = NSLayoutManager()
             textStorage.addLayoutManager(layoutManager)
@@ -616,9 +658,16 @@ enum StreamRenderer {
 
         func appendText(_ newText: String) {
             guard let storage = textView.textStorage else { return }
+            // Preserve base attributes while adding syntax highlighting
+            let highlightedText = SyntaxHighlighter.highlight(
+                newText, 
+                language: language,
+                baseAttributes: TextAttributes.codeBlock
+            )
+            
             
             storage.beginEditing()
-            storage.append(NSAttributedString(string: newText, attributes: TextAttributes.codeBlock))
+            storage.append(highlightedText)
             storage.endEditing()
 
             // Trigger layout without recursion
@@ -630,8 +679,12 @@ enum StreamRenderer {
         }
         
         func setText(_ content: String) {
-            let attrString = NSAttributedString(string: content, attributes: TextAttributes.codeBlock)
-            textView.textStorage?.setAttributedString(attrString)
+            let highlightedText = SyntaxHighlighter.highlight(
+                content, 
+                language: language,
+                baseAttributes: TextAttributes.codeBlock
+            )
+            textView.textStorage?.setAttributedString(highlightedText)
             updateHeight()
         }
         
