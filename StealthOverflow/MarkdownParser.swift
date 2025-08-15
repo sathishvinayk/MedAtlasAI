@@ -7,66 +7,83 @@ class MarkdownProcessor {
     }
     
     static func processInlineMarkdown(_ text: String) -> NSAttributedString {
-         let result = NSMutableAttributedString(string: text, attributes: TextAttributes.regular)
-    
-        // Processing order matters - most specific to least specific
+        let result = NSMutableAttributedString(string: text, attributes: TextAttributes.regular)
         
-        // 1. Process bold-italic (***text*** or ___text___)
-        processMarkdownPattern(
-            in: result,
-            pattern: "\\*{3}(.+?)\\*{3}|_{3}(.+?)_{3}",
-            attributes: TextAttributes.boldItalic,
-            groupIndex: 1
-        )
-        
-        // 2. Process bold (**text** or __text__)
-        processMarkdownPattern(
-            in: result,
-            pattern: "\\*{2}(.+?)\\*{2}|_{2}(.+?)_{2}",
-            attributes: TextAttributes.bold,
-            groupIndex: 1
-        )
-        
-        // 3. Process italic (*text* or _text_)
-        processMarkdownPattern(
-            in: result,
-            pattern: "\\*(.+?)\\*|_(.+?)_",
-            attributes: TextAttributes.italic,
-            groupIndex: 1
-        )
-        
-        // 4. Process inline code (`code`)
-        processMarkdownPattern(
-            in: result,
-            pattern: "`([^`]+)`",
-            attributes: TextAttributes.inlineCode,
-            groupIndex: 1
-        )
+        // Process in specific order - most constrained first
+        processEscapes(in: result)
+        processCodeSpans(in: result)
+        processTripleEmphasis(in: result)
+        processDoubleEmphasis(in: result)
+        processSingleEmphasis(in: result)
         
         return result
     }
     
-    private static func processMarkdownPattern(
-        in string: NSMutableAttributedString,
-        pattern: String,
-        attributes: [NSAttributedString.Key: Any],
-        groupIndex: Int
-    ) {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+    private static func processEscapes(in string: NSMutableAttributedString) {
+        let pattern = #"\\([*_`])"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
         
-        let matches = regex.matches(
-            in: string.string,
-            range: NSRange(location: 0, length: string.length)
-        )
+        let matches = regex.matches(in: string.string, range: NSRange(location: 0, length: string.length))
         
         for match in matches.reversed() {
-            if match.range.location != NSNotFound {
-                let contentRange = match.range(at: groupIndex)
-                if contentRange.location != NSNotFound {
-                    string.setAttributes(attributes, range: contentRange)
-                    string.replaceCharacters(in: match.range, with: string.attributedSubstring(from: contentRange))
-                }
-            }
+            guard match.range.location != NSNotFound else { continue }
+            let charRange = match.range(at: 1)
+            let char = string.attributedSubstring(from: charRange)
+            string.replaceCharacters(in: match.range, with: char)
+        }
+    }
+    
+    private static func processCodeSpans(in string: NSMutableAttributedString) {
+        let pattern = #"(`+)([^`\n]+?)\1"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        
+        let matches = regex.matches(in: string.string, range: NSRange(location: 0, length: string.length))
+        
+        for match in matches.reversed() {
+            guard match.range.location != NSNotFound,
+                  match.range(at: 2).location != NSNotFound else { continue }
+            
+            string.addAttributes(TextAttributes.inlineCode, range: match.range(at: 2))
+            let content = string.attributedSubstring(from: match.range(at: 2))
+            string.replaceCharacters(in: match.range, with: content)
+        }
+    }
+    
+    private static func processTripleEmphasis(in string: NSMutableAttributedString) {
+        processEmphasis(in: string, 
+                       pattern: #"(\*\*\*|___)(?![\s*_])(.+?)(?<![\s*_])\1"#,
+                       attributes: TextAttributes.boldItalic)
+    }
+    
+    private static func processDoubleEmphasis(in string: NSMutableAttributedString) {
+        processEmphasis(in: string, 
+                       pattern: #"(\*\*|__)(?![\s*_])(.+?)(?<![\s*_])\1"#,
+                       attributes: TextAttributes.bold)
+    }
+    
+    private static func processSingleEmphasis(in string: NSMutableAttributedString) {
+        processEmphasis(in: string, 
+                       pattern: #"([*_])(?![\s*_])(.+?)(?<![\s*_])\1"#,
+                       attributes: TextAttributes.italic)
+    }
+    
+    private static func processEmphasis(
+        in string: NSMutableAttributedString,
+        pattern: String,
+        attributes: [NSAttributedString.Key: Any]
+    ) {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        
+        let matches = regex.matches(in: string.string, range: NSRange(location: 0, length: string.length))
+        
+        for match in matches.reversed() {
+            guard match.range.location != NSNotFound,
+                  match.numberOfRanges >= 3,
+                  match.range(at: 2).location != NSNotFound else { continue }
+            
+            string.addAttributes(attributes, range: match.range(at: 2))
+            let content = string.attributedSubstring(from: match.range(at: 2))
+            string.replaceCharacters(in: match.range, with: content)
         }
     }
 }

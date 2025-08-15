@@ -764,34 +764,6 @@ enum StreamRenderer {
             
             // Append the new text while preserving ALL attributes
             textStorage.append(newText)
-            
-            // Ensure default attributes are applied to new text
-            let appendRange = NSRange(
-                location: textStorage.length - newText.length,
-                length: newText.length
-            )
-            
-            // Apply base attributes but preserve any existing markdown attributes
-            newText.enumerateAttributes(in: NSRange(location: 0, length: newText.length)) { attrs, range, _ in
-                var combinedAttrs = TextAttributes.regular
-                attrs.forEach { combinedAttrs[$0.key] = $0.value }
-                
-                // Fix font attributes specifically
-                if let font = attrs[.font] as? NSFont {
-                    if font.fontDescriptor.symbolicTraits.contains(.bold) {
-                        combinedAttrs[.font] = TextAttributes.bold[.font]
-                    }
-                    if font.fontDescriptor.symbolicTraits.contains(.italic) {
-                        combinedAttrs[.font] = TextAttributes.italic[.font]
-                    }
-                }
-                
-                textStorage.setAttributes(combinedAttrs, range: NSRange(
-                    location: appendRange.location + range.location,
-                    length: range.length
-                ))
-            }
-            
             textStorage.endEditing()
             
             // Restore selection
