@@ -12,9 +12,9 @@ class ChatController {
 
     // Thread-safe controller management
     private let controllerAccessQueue = DispatchQueue(label: "com.controller.access", attributes: .concurrent)
-    private var _currentStreamingTextController: StreamRenderer.StreamMessageController?
+    private var _currentStreamingTextController: StreamMessageController?
     
-    private var currentStreamingTextController: StreamRenderer.StreamMessageController? {
+    private var currentStreamingTextController: StreamMessageController? {
         get { controllerAccessQueue.sync { _currentStreamingTextController } }
         set { controllerAccessQueue.async(flags: .barrier) { self._currentStreamingTextController = newValue } }
     }
