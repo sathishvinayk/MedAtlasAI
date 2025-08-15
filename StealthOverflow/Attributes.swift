@@ -14,6 +14,22 @@ struct TextAttributes {
             return style
         }()
     ]
+    static let bold: [NSAttributedString.Key: Any] = [
+        .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize),
+        .foregroundColor: NSColor.textColor
+    ]
+
+    static let italic: [NSAttributedString.Key: Any] = [
+        .font: NSFontManager.shared.convert(NSFont.systemFont(ofSize: NSFont.systemFontSize), 
+                   toHaveTrait: .italicFontMask),
+        .foregroundColor: NSColor.textColor
+    ]
+    
+    static let boldItalic: [NSAttributedString.Key: Any] = [
+        .font: NSFontManager.shared.convert(NSFont.boldSystemFont(ofSize: NSFont.systemFontSize), 
+                   toHaveTrait: .italicFontMask),
+        .foregroundColor: NSColor.textColor
+    ]
     
     static let inlineCode: [NSAttributedString.Key: Any] = [
         .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),

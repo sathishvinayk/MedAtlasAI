@@ -204,6 +204,63 @@ extension LanguageSyntax {
 }
 
 class SyntaxHighlighter {
+    // Constants
+    static let validLanguages: Set<String> = [
+        "swift", "python", "javascript", "typescript", "java",
+        "kotlin", "c", "cpp", "csharp", "go", "ruby", "php",
+        "rust", "scala", "dart", "r", "objectivec", "bash", "sh",
+        "json", "yaml", "xml", "html", "css", "markdown", "text",
+        "pascal"
+    ]
+
+    static func validateAndAutocorrectLanguage(_ language: String) -> String {
+        let autocorrections = [
+            "ript": "javascript",
+            "n": "python",
+            "ja": "java",
+            "js": "javascript",
+            "ts": "typescript",
+            "c++": "cpp",
+            "c#": "csharp",
+            "py": "python",
+            "rb": "ruby",
+            "sh": "bash",
+            "htm": "html",
+            "yml": "yaml",
+            "pas": "pascal",
+        ]
+        
+        // Handle empty or whitespace language
+        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        
+        let normalized = trimmed.lowercased()
+        
+        // 1. Check if it's a common prefix of any valid language
+        for validLang in Self.validLanguages {
+            if validLang.hasPrefix(normalized) {
+                return validLang
+            }
+        }
+        
+        // 2. Check direct autocorrections
+        if let corrected = autocorrections[normalized] {
+            return corrected
+        }
+        
+        // 3. Check if it's a file extension match
+        if normalized.count <= 5 {  // Only check short strings as potential extensions
+            for validLang in Self.validLanguages {
+                if validLang == normalized {
+                    return validLang
+                }
+            }
+        }
+        
+        // Default to empty string if no match
+        return ""
+    }
+
     static func highlight(_ code: String, language: String, baseAttributes: [NSAttributedString.Key: Any] = TextAttributes.codeBlock) -> NSAttributedString {
         let result = NSMutableAttributedString(string: code, attributes: baseAttributes)
         

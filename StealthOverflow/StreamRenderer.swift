@@ -71,15 +71,6 @@ class CodeBlockParser {
         set { stateLock.withLock { _partialCodeBlockContent = newValue } }
     }
     
-    // Constants
-    private static let validLanguages: Set<String> = [
-        "swift", "python", "javascript", "typescript", "java",
-        "kotlin", "c", "cpp", "csharp", "go", "ruby", "php",
-        "rust", "scala", "dart", "r", "objectivec", "bash", "sh",
-        "json", "yaml", "xml", "html", "css", "markdown", "text",
-        "pascal"
-    ]
-    
     // MARK: - Public Interface
     func parseChunk(_ chunk: String, isComplete: Bool = false) -> [ParsedElement] {
         return stateLock.withLock {
@@ -133,48 +124,60 @@ class CodeBlockParser {
         }
     }
     
-    // MARK: - Private Methods
     private func processLine(_ line: String) -> [ParsedElement] {
         var output: [ParsedElement] = []
         var remainingLine = line
         
         // Early return for completely plain text
-        if !remainingLine.contains("`") && parserState == .text {
+        if !remainingLine.contains("`") && 
+        !remainingLine.contains("*") && 
+        !remainingLine.contains("_") && 
+        parserState == .text {
+            print("Inside ProcessLine -> \(remainingLine)")
             return [.text(createRegularText(remainingLine))]
         }
         
         while !remainingLine.isEmpty {
             switch parserState {
             case .text:
-                if let backtickIndex = remainingLine.firstIndex(of: "`") {
-                    // Process text before backticks
-                    let textBefore = String(remainingLine[..<backtickIndex])
+                if let firstSpecialChar = remainingLine.firstIndex(where: { $0 == "`" || $0 == "*" || $0 == "_" }) {
+                    let char = remainingLine[firstSpecialChar]
+                    
+                    // Process text before special character
+                    let textBefore = String(remainingLine[..<firstSpecialChar])
                     if !textBefore.isEmpty {
-                         // Only add if it's not just whitespace/newlines
-                        // let trimmedBefore = textBefore.trimmingCharacters(in: .whitespacesAndNewlines)
-                        // if !trimmedBefore.isEmpty {
-                        //     output.append(.text(createRegularText(textBefore)))
-                        // }
                         output.append(.text(createRegularText(textBefore)))
                     }
                     
-                    // Process backticks
-                    let backtickPart = String(remainingLine[backtickIndex...])
-                    if let backtickCount = countConsecutiveBackticks(backtickPart), backtickCount >= 3 {
-                        let backticks = String(backtickPart.prefix(backtickCount))
-                        let remainingAfterBackticks = String(backtickPart.dropFirst(backtickCount))
-
-                        if output.last?.textContent.trimmingCharacters(in: .newlines).isEmpty == true {
-                            _ = output.popLast()
+                    let remainingText = String(remainingLine[firstSpecialChar...])
+                    
+                    if char == "`" {
+                        if let backtickCount = MarkdownProcessor.countConsecutiveBackticks(remainingText), backtickCount >= 3 {
+                            // Code block start
+                            let backticks = String(remainingText.prefix(backtickCount))
+                            let remainingAfterBackticks = String(remainingText.dropFirst(backtickCount))
+                            
+                            // Remove any trailing whitespace from previous text
+                            if output.last?.textContent.trimmingCharacters(in: .newlines).isEmpty == true {
+                                _ = output.popLast()
+                            }
+                            
+                            parserState = .potentialCodeBlockStart(backticks: backticks)
+                            remainingLine = remainingAfterBackticks
+                        } else {
+                            // Inline code - process until end of line or closing backtick
+                            let processed = processInlineCode(remainingText)
+                            output.append(.text(processed))
+                            remainingLine = ""
                         }
-                        
-                        parserState = .potentialCodeBlockStart(backticks: backticks)
-                        remainingLine = remainingAfterBackticks
                     } else {
-                        output.append(.text(processInlineCode(backtickPart)))
+                        // Bold or italic markdown
+                        let processed = MarkdownProcessor.processInlineMarkdown(remainingText)
+                        output.append(.text(processed))
                         remainingLine = ""
                     }
                 } else {
+                    // No more special characters
                     output.append(.text(createRegularText(remainingLine)))
                     remainingLine = ""
                 }
@@ -183,28 +186,16 @@ class CodeBlockParser {
                 if let newlineIndex = remainingLine.firstIndex(of: "\n") {
                     let languagePart = languageBuffer + String(remainingLine[..<newlineIndex])
                     languageBuffer = ""
-                    print("Language part buffering -> \(languagePart)")
-        
-                    // First try to get the complete language name if it exists
-                    let rawLanguage = languagePart
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                    print("Raw Language -> \(rawLanguage)")
-
-                    // Check if we have a complete valid language first
-                    let validatedLanguage: String
-                    if Self.validLanguages.contains(rawLanguage.lowercased()) {
-                        validatedLanguage = rawLanguage.lowercased()
-                    } else {
-                        // If not, try to autocorrect partial/incomplete language names
-                        validatedLanguage = validateAndAutocorrectLanguage(rawLanguage)
-                    }
                     
-                    print("validatedLanguage -> \(validatedLanguage)")
-
-                    // Skip past the language and newline
+                    let rawLanguage = languagePart.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let validatedLanguage = SyntaxHighlighter.validLanguages.contains(rawLanguage.lowercased()) ? 
+                        rawLanguage.lowercased() : 
+                    SyntaxHighlighter.validateAndAutocorrectLanguage(rawLanguage)
+                    
                     remainingLine = String(remainingLine[remainingLine.index(after: newlineIndex)...])
                     parserState = .inCodeBlock(language: validatedLanguage, openingBackticks: backticks)
+                    
+                    // Skip empty lines after code block start
                     while remainingLine.first == "\n" {
                         remainingLine.removeFirst()
                     }
@@ -215,41 +206,38 @@ class CodeBlockParser {
                 
             case .inCodeBlock(let language, let openingBackticks):
                 if let (endRange, _) = findClosingBackticks(in: remainingLine, openingBackticks: openingBackticks) {
-                    print("language inCode block if -> \(language)")
-                    let completeContent = codeBlockBuffer + String(remainingLine[..<endRange.lowerBound])
+                    // Found closing backticks - complete the code block
+                    let contentBeforeEnd = String(remainingLine[..<endRange.lowerBound])
+                    let completeContent = codeBlockBuffer + contentBeforeEnd
                     codeBlockBuffer = ""
-
-                    // Trim only trailing whitespace from code block content
-                    let trimmedContent = completeContent.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmedContent.isEmpty {
+                    
+                    if !completeContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         output.append(.codeBlock(language: language, content: completeContent))
                     }
                     
-                    // output.append(.codeBlock(language: language, content: completeContent))
                     parserState = .text
                     remainingLine = String(remainingLine[endRange.upperBound...])
-
-                    // Skip any immediate newlines after the code block
-                    // if let firstChar = remainingLine.first, firstChar == "\n" {
-                    //     remainingLine.removeFirst()
-                    // }
-                     // Skip any immediate newlines after the code block
+                    
+                    // Skip empty lines after code block end
                     while remainingLine.first == "\n" {
                         remainingLine.removeFirst()
                     }
                 } else {
-                    print("language inCode block else -> \(language)")
-                    // For partial code blocks, return incremental updates
-                    if !codeBlockBuffer.isEmpty {
-                        output.append(.codeBlock(language: language, content: codeBlockBuffer))
-                        codeBlockBuffer = ""
+                    // No closing backticks found - accumulate partial content
+                    if !remainingLine.isEmpty {
+                        // Only send incremental updates if we have significant content
+                        let newContent = codeBlockBuffer + remainingLine
+                        if newContent.contains("\n") || newContent.count > 20 {
+                            output.append(.codeBlock(language: language, content: newContent))
+                            codeBlockBuffer = ""
+                        } else {
+                            codeBlockBuffer = newContent
+                        }
                     }
-                    output.append(.codeBlock(language: language, content: remainingLine))
                     remainingLine = ""
                 }
-
+                
             case .potentialCodeBlockEnd(let backticks):
-                // Handle incomplete closing fence
                 if remainingLine.allSatisfy({ $0 == "`" }) {
                     pendingBackticks += remainingLine
                     remainingLine = ""
@@ -305,61 +293,9 @@ class CodeBlockParser {
         return result
     }
     
-    private func validateAndAutocorrectLanguage(_ language: String) -> String {
-        let autocorrections = [
-            "ript": "javascript",
-            "n": "python",
-            "ja": "java",
-            "js": "javascript",
-            "ts": "typescript",
-            "c++": "cpp",
-            "c#": "csharp",
-            "py": "python",
-            "rb": "ruby",
-            "sh": "bash",
-            "htm": "html",
-            "yml": "yaml",
-            "pas": "pascal",
-        ]
-        
-        // Handle empty or whitespace language
-        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        
-        let normalized = trimmed.lowercased()
-        
-        // 1. Check if it's a common prefix of any valid language
-        for validLang in Self.validLanguages {
-            if validLang.hasPrefix(normalized) {
-                return validLang
-            }
-        }
-        
-        // 2. Check direct autocorrections
-        if let corrected = autocorrections[normalized] {
-            return corrected
-        }
-        
-        // 3. Check if it's a file extension match
-        if normalized.count <= 5 {  // Only check short strings as potential extensions
-            for validLang in Self.validLanguages {
-                if validLang == normalized {
-                    return validLang
-                }
-            }
-        }
-        
-        // Default to empty string if no match
-        return ""
-    }
-    
-    private func countConsecutiveBackticks(_ text: String) -> Int? {
-        guard let first = text.first, first == "`" else { return nil }
-        return text.prefix { $0 == "`" }.count
-    }
-    
     private func createRegularText(_ text: String) -> NSAttributedString {
-        return NSAttributedString(string: text, attributes: TextAttributes.regular)
+        // return NSAttributedString(string: text, attributes: TextAttributes.regular)
+        return MarkdownProcessor.processInlineMarkdown(text)
     }
 }
 
@@ -803,6 +739,9 @@ enum StreamRenderer {
             textView.textContainer?.widthTracksTextView = true
             textView.isHorizontallyResizable = false
             textView.textColor = .labelColor
+            textView.isRichText = true
+            textView.usesFontPanel = false
+            textView.allowsDocumentBackgroundColorChange = false
             
             addSubview(textView)
             
@@ -816,9 +755,48 @@ enum StreamRenderer {
         }
 
         func appendText(_ newText: NSAttributedString) {
-            guard textView.textStorage != nil else { return }
-            // Append the new attributed text
-            textView.textStorage?.append(newText)
+            guard let textStorage = textView.textStorage else { return }
+    
+            // Store current selection
+            let currentSelection = textView.selectedRange()
+            
+            textStorage.beginEditing()
+            
+            // Append the new text while preserving ALL attributes
+            textStorage.append(newText)
+            
+            // Ensure default attributes are applied to new text
+            let appendRange = NSRange(
+                location: textStorage.length - newText.length,
+                length: newText.length
+            )
+            
+            // Apply base attributes but preserve any existing markdown attributes
+            newText.enumerateAttributes(in: NSRange(location: 0, length: newText.length)) { attrs, range, _ in
+                var combinedAttrs = TextAttributes.regular
+                attrs.forEach { combinedAttrs[$0.key] = $0.value }
+                
+                // Fix font attributes specifically
+                if let font = attrs[.font] as? NSFont {
+                    if font.fontDescriptor.symbolicTraits.contains(.bold) {
+                        combinedAttrs[.font] = TextAttributes.bold[.font]
+                    }
+                    if font.fontDescriptor.symbolicTraits.contains(.italic) {
+                        combinedAttrs[.font] = TextAttributes.italic[.font]
+                    }
+                }
+                
+                textStorage.setAttributes(combinedAttrs, range: NSRange(
+                    location: appendRange.location + range.location,
+                    length: range.length
+                ))
+            }
+            
+            textStorage.endEditing()
+            
+            // Restore selection
+            textView.setSelectedRange(currentSelection)
+            updateHeight()
             
             // Trigger layout without recursion
             NSAnimationContext.runAnimationGroup { context in
@@ -885,10 +863,6 @@ enum StreamRenderer {
 
         bubble.addSubview(stack)
 
-        // let textblock = TextBlock(maxWidth: maxWidth)
-        // stack.addArrangedSubview(textblock)
-
-        // let controller = StreamMessageController(textBlock: textblock)
         let controller = StreamMessageController(
             containerView: container, 
             stackView: stack, 
@@ -963,76 +937,6 @@ enum StreamRenderer {
             )
             textBlock.needsUpdateConstraints = true
             textBlock.needsLayout = true
-        }
-    }
-}
-
-extension String {
-    func cleanedForStream() -> String {
-        var cleaned = replacingOccurrences(of: "\0", with: "")
-        cleaned = cleaned.filter { char in
-            let value = char.unicodeScalars.first?.value ?? 0
-            return (value >= 32 && value <= 126) || // ASCII printable
-                value == 10 || // Newline
-                value == 9 || // Tab
-                (value > 127 && value <= 0xFFFF) // Common Unicode
-        }
-        return cleaned
-    }
-}
-
-// MARK: - NSLock Extension
-extension NSLock {
-    func withLock<T>(_ block: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try block()
-    }
-}
-
-extension String {
-    func normalizeMarkdownCodeBlocks() -> String {
-        var result = self
-        
-        // Fix double/malformed code blocks
-        result = result.replacingOccurrences(
-            of: #"```(\w*)\s*```(\w+)"#,
-            with: "```$2",
-            options: .regularExpression
-        )
-        
-        // Fix single-letter language specifiers
-        result = result.replacingOccurrences(
-            of: #"```(\w)\s"#,
-            with: "```$1",
-            options: .regularExpression
-        )
-        
-        // Ensure newlines around code blocks
-        result = result.replacingOccurrences(
-            of: #"(?<!\n)```(\w*)"#,
-            with: "\n```$1",
-            options: .regularExpression
-        )
-        
-        return result
-    }
-}
-
-// Add this extension at the top level of your file (not inside any class/struct)
-extension Unicode.Scalar {
-    var isPrintableASCII: Bool {
-        return value >= 32 && value <= 126  // ASCII printable range
-    }
-}
-
-extension CodeBlockParser.ParsedElement {
-    var textContent: String {
-        switch self {
-        case .text(let attributedString):
-            return attributedString.string
-        case .codeBlock(_, let content):
-            return content
         }
     }
 }

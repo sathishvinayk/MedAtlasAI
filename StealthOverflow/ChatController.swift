@@ -58,7 +58,7 @@ class ChatController {
     }
 
     private func processStreamChunk(_ chunk: String) {
-        // print("chunk -> \(chunk)")
+        print("chunk -> \(chunk)")
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
