@@ -1,89 +1,77 @@
 import Cocoa
 
 class MarkdownProcessor {
-    static func countConsecutiveBackticks(_ text: String) -> Int? {
-        guard let first = text.first, first == "`" else { return nil }
-        return text.prefix { $0 == "`" }.count
-    }
-    
     static func processInlineMarkdown(_ text: String) -> NSAttributedString {
-        let result = NSMutableAttributedString(string: text, attributes: TextAttributes.regular)
+        let attributedString = NSMutableAttributedString(string: text, attributes: TextAttributes.regular)
         
-        // Process in specific order - most constrained first
-        processEscapes(in: result)
-        processCodeSpans(in: result)
-        processTripleEmphasis(in: result)
-        processDoubleEmphasis(in: result)
-        processSingleEmphasis(in: result)
+        // Process bold text (**bold** or __bold__)
+        processBoldText(in: attributedString)
         
-        return result
+        // Then process inline code (`code`)
+        processInlineCode(in: attributedString)
+        
+        return attributedString
     }
     
-    private static func processEscapes(in string: NSMutableAttributedString) {
-        let pattern = #"\\([*_`])"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+    private static func processBoldText(in attributedString: NSMutableAttributedString) {
+        let boldPattern = "(\\*\\*|__)(?=\\S)(.+?)(?<=\\S)(\\1)"
         
-        let matches = regex.matches(in: string.string, range: NSRange(location: 0, length: string.length))
+        guard let regex = try? NSRegularExpression(pattern: boldPattern, options: []) else { return }
+        
+        let matches = regex.matches(
+            in: attributedString.string,
+            range: NSRange(location: 0, length: attributedString.length)
+        )
         
         for match in matches.reversed() {
-            guard match.range.location != NSNotFound else { continue }
-            let charRange = match.range(at: 1)
-            let char = string.attributedSubstring(from: charRange)
-            string.replaceCharacters(in: match.range, with: char)
+            if match.numberOfRanges >= 3 {
+                let fullRange = match.range(at: 0)
+                let contentRange = match.range(at: 2)
+
+                print("Bold text identified\(attributedString)")
+                
+                if contentRange.location != NSNotFound {
+                    // Create bold font
+                    let currentFont = attributedString.attribute(.font, at: contentRange.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 14)
+                    let boldFont = NSFontManager.shared.convert(currentFont, toHaveTrait: .boldFontMask)
+                    
+                    // Apply bold attributes
+                    attributedString.addAttributes([
+                        .font: boldFont,
+                        .foregroundColor: NSColor.primaryText
+                    ], range: contentRange)
+
+                    print("Bold text identified\(attributedString)")
+                    
+                    // Remove the markdown markers
+                    let content = attributedString.attributedSubstring(from: contentRange)
+                    attributedString.replaceCharacters(in: fullRange, with: content)
+                }
+            }
         }
     }
     
-    private static func processCodeSpans(in string: NSMutableAttributedString) {
-        let pattern = #"(`+)([^`\n]+?)\1"#
+    private static func processInlineCode(in attributedString: NSMutableAttributedString) {
+        let pattern = "`([^`]+)`"
+        
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
         
-        let matches = regex.matches(in: string.string, range: NSRange(location: 0, length: string.length))
+        let matches = regex.matches(
+            in: attributedString.string,
+            range: NSRange(location: 0, length: attributedString.length)
+        )
         
         for match in matches.reversed() {
-            guard match.range.location != NSNotFound,
-                  match.range(at: 2).location != NSNotFound else { continue }
-            
-            string.addAttributes(TextAttributes.inlineCode, range: match.range(at: 2))
-            let content = string.attributedSubstring(from: match.range(at: 2))
-            string.replaceCharacters(in: match.range, with: content)
+            if match.range.location != NSNotFound && match.range.length > 0 {
+                let codeRange = match.range(at: 1)
+                attributedString.setAttributes(TextAttributes.inlineCode, range: codeRange)
+                attributedString.replaceCharacters(in: match.range, with: attributedString.attributedSubstring(from: codeRange))
+            }
         }
     }
     
-    private static func processTripleEmphasis(in string: NSMutableAttributedString) {
-        processEmphasis(in: string, 
-                       pattern: #"(\*\*\*|___)(?![\s*_])(.+?)(?<![\s*_])\1"#,
-                       attributes: TextAttributes.boldItalic)
-    }
-    
-    private static func processDoubleEmphasis(in string: NSMutableAttributedString) {
-        processEmphasis(in: string, 
-                       pattern: #"(\*\*|__)(?![\s*_])(.+?)(?<![\s*_])\1"#,
-                       attributes: TextAttributes.bold)
-    }
-    
-    private static func processSingleEmphasis(in string: NSMutableAttributedString) {
-        processEmphasis(in: string, 
-                       pattern: #"([*_])(?![\s*_])(.+?)(?<![\s*_])\1"#,
-                       attributes: TextAttributes.italic)
-    }
-    
-    private static func processEmphasis(
-        in string: NSMutableAttributedString,
-        pattern: String,
-        attributes: [NSAttributedString.Key: Any]
-    ) {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
-        
-        let matches = regex.matches(in: string.string, range: NSRange(location: 0, length: string.length))
-        
-        for match in matches.reversed() {
-            guard match.range.location != NSNotFound,
-                  match.numberOfRanges >= 3,
-                  match.range(at: 2).location != NSNotFound else { continue }
-            
-            string.addAttributes(attributes, range: match.range(at: 2))
-            let content = string.attributedSubstring(from: match.range(at: 2))
-            string.replaceCharacters(in: match.range, with: content)
-        }
+    static func countConsecutiveBackticks(in string: String) -> Int? {
+        guard let firstChar = string.first, firstChar == "`" else { return nil }
+        return string.prefix(while: { $0 == "`" }).count
     }
 }

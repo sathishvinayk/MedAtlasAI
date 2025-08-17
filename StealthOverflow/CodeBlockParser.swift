@@ -73,20 +73,33 @@ class CodeBlockParser {
             lineBuffer = ""
             var output: [ParsedElement] = []
             
-            if !remainingText.contains("`") && parserState == .text {
-                let text = partialCodeBlockContent + remainingText
-                partialCodeBlockContent = ""
-                return [.text(createRegularText(text))]
-            }
+            if !remainingText.contains("`") && 
+                !remainingText.contains("*") && 
+                !remainingText.contains("_") && 
+                parserState == .text {
+                    print("remainingText doesn't contains ` and * and _ called\(remainingText)")
+                    let text = partialCodeBlockContent + remainingText
+                    partialCodeBlockContent = ""
+                    
+                    // Even if there are no backticks, we still need to process for bold text
+                    if text.contains("**") || text.contains("__") {
+                        print("text contains ** or __ called\(text)")
+                        return [.text(createRegularText(text))]
+                    } else {
+                        return [.text(NSAttributedString(string: text, attributes: TextAttributes.regular))]
+                    }
+                }
             
             while !remainingText.isEmpty {
                 if let newlineIndex = remainingText.firstIndex(of: "\n") {
+                    print("remainingText firstIndex has newline \(newlineIndex)")
                     let line = String(remainingText[..<newlineIndex])
                     remainingText = String(remainingText[remainingText.index(after: newlineIndex)...])
                     
                     let processed = processLine(line + "\n")
                     output.append(contentsOf: processed)
                 } else {
+                    print("remainingText firstIndex doesn't have newline")
                     lineBuffer = remainingText
                     remainingText = ""
                 }
@@ -119,6 +132,7 @@ class CodeBlockParser {
     }
     
     private func processLine(_ line: String) -> [ParsedElement] {
+        print("processline being called\(line)")
         var output: [ParsedElement] = []
         var remainingLine = line
         
@@ -144,7 +158,8 @@ class CodeBlockParser {
                     let remainingText = String(remainingLine[firstSpecialChar...])
                     
                     if char == "`" {
-                        if let backtickCount = MarkdownProcessor.countConsecutiveBackticks(remainingText), backtickCount >= 3 {
+                        print("First character is matching with (`) alone\(char)")
+                        if let backtickCount = MarkdownProcessor.countConsecutiveBackticks(in: remainingText), backtickCount >= 3 {
                             let backticks = String(remainingText.prefix(backtickCount))
                             let remainingAfterBackticks = String(remainingText.dropFirst(backtickCount))
                             
@@ -155,16 +170,19 @@ class CodeBlockParser {
                             parserState = .potentialCodeBlockStart(backticks: backticks)
                             remainingLine = remainingAfterBackticks
                         } else {
+                            print("countConsecutiveBackticks not satisfied\(char)")
                             let processed = processInlineCode(remainingText)
                             output.append(.text(processed))
                             remainingLine = ""
                         }
                     } else {
+                        print("First character is matching with (`), (*) or (_)\(char)")
                         let processed = MarkdownProcessor.processInlineMarkdown(remainingText)
                         output.append(.text(processed))
                         remainingLine = ""
                     }
                 } else {
+                    print("First character is not matching (`), (*) or (_)\(remainingLine)")
                     output.append(.text(createRegularText(remainingLine)))
                     remainingLine = ""
                 }

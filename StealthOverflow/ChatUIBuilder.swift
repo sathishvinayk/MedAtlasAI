@@ -110,7 +110,7 @@ struct ChatUIBuilder {
         let stopButton = NSButton(title: "■", target: target, action: stopAction)
         stopButton.translatesAutoresizingMaskIntoConstraints = false
         stopButton.bezelStyle = .inline
-        stopButton.font = NSFont.systemFont(ofSize: 20, weight: .medium)
+        stopButton.font = NSFont.systemFont(ofSize: 18, weight: .medium)
         stopButton.setButtonType(.momentaryPushIn)
         stopButton.isBordered = false
         stopButton.wantsLayer = true
@@ -150,8 +150,8 @@ struct ChatUIBuilder {
             // Position buttons
             stopButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             stopButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            stopButton.widthAnchor.constraint(equalToConstant: 28),
-            stopButton.heightAnchor.constraint(equalToConstant: 28),
+            stopButton.widthAnchor.constraint(equalToConstant: 25),
+            stopButton.heightAnchor.constraint(equalToConstant: 25),
             
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
