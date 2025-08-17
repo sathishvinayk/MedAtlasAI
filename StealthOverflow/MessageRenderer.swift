@@ -83,8 +83,8 @@ enum MessageRenderer {
         bubble.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         bubble.wantsLayer = true
         bubble.layer?.backgroundColor = isUser
-            ? NSColor.systemBlue.withAlphaComponent(0.8).cgColor
-            : NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+            ? NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+            : NSColor.systemBlue.withAlphaComponent(0.8).cgColor
         bubble.layer?.cornerRadius = 10
         bubble.layer?.masksToBounds = true
         container.addSubview(bubble)

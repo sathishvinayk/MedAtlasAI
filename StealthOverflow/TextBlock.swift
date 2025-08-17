@@ -75,7 +75,7 @@ class TextBlock: NSView {
         textView.isSelectable = true
         textView.drawsBackground = false
         textView.backgroundColor = .clear
-        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.textContainerInset = NSSize(width: 0, height: 6)
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
         textView.isHorizontallyResizable = false

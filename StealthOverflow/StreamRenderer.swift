@@ -14,7 +14,7 @@ enum StreamRenderer {
         let bubble = NSView()
         bubble.translatesAutoresizingMaskIntoConstraints = false
         bubble.wantsLayer = true
-        bubble.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+        // bubble.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
         bubble.layer?.cornerRadius = 10
         
         container.addSubview(bubble)
@@ -34,14 +34,18 @@ enum StreamRenderer {
             maxWidth: maxWidth
         )
 
-        let bubbleWidth = bubble.widthAnchor.constraint(equalTo: container.widthAnchor, constant: -10)
+        let bubbleWidth = bubble.widthAnchor.constraint(equalTo: container.widthAnchor, constant: -8)
         bubbleWidth.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 6),
-            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -6),
-            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 6),
-            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -6),
+
+            container.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 50),
+            container.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+
+            stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 4),
+            stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -4),
+            stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 2),
+            stack.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -2),
             
             bubble.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             bubble.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
@@ -50,8 +54,8 @@ enum StreamRenderer {
             bubble.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
             bubble.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
 
-            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
+            bubble.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bubble.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
         ])
 
         _ = setupWindowResizeHandler(for: bubble, container: container)
