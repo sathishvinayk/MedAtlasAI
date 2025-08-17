@@ -56,7 +56,7 @@ struct ChatUIBuilder {
         inputContainer.layer?.masksToBounds = true 
         inputContainer.layer?.backgroundColor = NSColor.inputContainerColor.cgColor
         inputContainer.layer?.borderColor = .white
-        inputContainer.layer?.borderWidth = 0.5
+        inputContainer.layer?.borderWidth = 0.3
 
         let inputScroll = NSScrollView()
         inputScroll.translatesAutoresizingMaskIntoConstraints = false
@@ -98,7 +98,7 @@ struct ChatUIBuilder {
         let sendButton = NSButton(title: "➤", target: target, action: sendAction)
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         sendButton.bezelStyle = .inline
-        sendButton.font = NSFont.systemFont(ofSize: 16)
+        sendButton.font = NSFont.systemFont(ofSize: 20, weight: .medium)
         sendButton.setButtonType(.momentaryPushIn)
         sendButton.isBordered = false
         sendButton.wantsLayer = true
@@ -106,18 +106,11 @@ struct ChatUIBuilder {
         sendButton.isEnabled = false
         sendButton.toolTip = "Send"
 
-        //  // Update send button state when text changes
-        // NotificationCenter.default.addObserver(forName: NSText.didChangeNotification, object: textView, queue: .main) { _ in
-        //     let hasText = !textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        //     sendButton.isEnabled = hasText
-        //     sendButton.contentTintColor = hasText ? .systemBlue : .disabledControlTextColor
-        // }
-
         // Create stop button (initially hidden)
         let stopButton = NSButton(title: "■", target: target, action: stopAction)
         stopButton.translatesAutoresizingMaskIntoConstraints = false
         stopButton.bezelStyle = .inline
-        stopButton.font = NSFont.systemFont(ofSize: 14)
+        stopButton.font = NSFont.systemFont(ofSize: 20, weight: .medium)
         stopButton.setButtonType(.momentaryPushIn)
         stopButton.isBordered = false
         stopButton.wantsLayer = true
@@ -157,13 +150,13 @@ struct ChatUIBuilder {
             // Position buttons
             stopButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             stopButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            stopButton.widthAnchor.constraint(equalToConstant: 22),
-            stopButton.heightAnchor.constraint(equalToConstant: 22),
+            stopButton.widthAnchor.constraint(equalToConstant: 28),
+            stopButton.heightAnchor.constraint(equalToConstant: 28),
             
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            sendButton.widthAnchor.constraint(equalToConstant: 22),
-            sendButton.heightAnchor.constraint(equalToConstant: 22),
+            sendButton.widthAnchor.constraint(equalToConstant: 28),
+            sendButton.heightAnchor.constraint(equalToConstant: 28),
 
             messagesStack.topAnchor.constraint(equalTo: documentView.topAnchor),
             messagesStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
