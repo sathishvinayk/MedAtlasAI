@@ -1,6 +1,18 @@
 // Extensions.swift
 import Cocoa
 
+extension NSColor {
+    static let appBackground = NSColor(red: 3/255, green: 7/255, blue: 18/255, alpha: 1.0)
+    static let inputContainerColor = NSColor(red: 10/255, green: 15/255, blue: 30/255, alpha: 0.9)
+    static let primaryText = NSColor(red: 220/255, green: 220/255, blue: 220/255, alpha: 1.0)
+    static let codeBlockBackground = NSColor(red: 8/255, green: 12/255, blue: 28/255, alpha: 1.0)
+    static let codeBlockBorder = NSColor(red: 20/255, green: 25/255, blue: 50/255, alpha: 1.0)
+    static let codeTextColor = NSColor(red: 220/255, green: 220/255, blue: 240/255, alpha: 1.0)
+    static let userMessageBackground = NSColor(red: 15/255, green: 20/255, blue: 40/255, alpha: 1.0)
+    static let userMessageText = NSColor(red: 230/255, green: 230/255, blue: 240/255, alpha: 1.0)
+    static let userMessageBorderColor = NSColor(red: 30/255, green: 35/255, blue: 60/255, alpha: 1.0)
+}
+
 extension String {
     func cleanedForStream() -> String {
         var cleaned = replacingOccurrences(of: "\0", with: "")
