@@ -30,10 +30,17 @@ class ChatApiService: NSObject, URLSessionDataDelegate {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let requestBody: [String: Any] = [
-            "model": "mistralai/mistral-7b-instruct",
+            "model": "mistralai/mistral-7b-instruct", // This is only for the API, not shown to users
             "stream": true,
             "messages": [
-                ["role": "system", "content": "You are a helpful assistant."],
+                ["role": "system", "content": """
+                You are SilentGlass, a helpful AI assistant. Follow these rules strictly:
+                1. Never reveal your underlying model name or architecture
+                2. If asked about your identity, respond: "I'm SilentGlass, your AI assistant"
+                3. Never mention Mistral, OpenAI, or any other company
+                4. If pressed about technical details, say "I'm an AI language model designed to help with information and tasks"
+                5. Redirect technical questions to your capabilities
+                """],
                 ["role": "user", "content": prompt]
             ]
         ]

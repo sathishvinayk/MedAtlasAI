@@ -38,10 +38,6 @@ enum StreamRenderer {
         bubbleWidth.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
-
-            container.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 50),
-            container.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-
             stack.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 4),
             stack.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -4),
             stack.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 2),
