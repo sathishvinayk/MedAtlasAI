@@ -1,9 +1,11 @@
 import Cocoa
 
 class TypingIndicatorView: NSView {
-    private let label = NSTextField(labelWithString: "")
+    private let dots = [NSTextField(labelWithString: "."), 
+                    NSTextField(labelWithString: "."), 
+                    NSTextField(labelWithString: ".")]
     private var timer: Timer?
-    private var dotCount = 0
+    private var currentDot = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -20,34 +22,57 @@ class TypingIndicatorView: NSView {
     private func setupUI() {
         wantsLayer = true
         layer?.backgroundColor = .clear
+        layer?.cornerRadius = 14
 
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = NSFont.systemFont(ofSize: 30)
-        label.textColor = .white
-        label.alignment = .left
-        label.lineBreakMode = .byWordWrapping
-
-        addSubview(label)
+        let stackView = NSStackView()
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.orientation = .horizontal
+        stackView.spacing = 4
+        stackView.alignment = .bottom
+        
+        for dot in dots {
+            dot.font = NSFont.systemFont(ofSize: 30)
+            dot.textColor = .white
+            stackView.addArrangedSubview(dot)
+        }
+        
+        addSubview(stackView)
 
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            stackView.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             heightAnchor.constraint(greaterThanOrEqualToConstant: 30)
         ])
     }
 
     private func startAnimating() {
         timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
-            self.dotCount = (self.dotCount + 1) % 4
-            // self.label.stringValue = "Assistant is typing" + String(repeating: ".", count: self.dotCount)
-            self.label.stringValue = String(repeating: ".", count: self.dotCount)
+            // Reset all dots to original position
+            for dot in self.dots {
+                dot.layer?.removeAllAnimations()
+                dot.frame.origin.y = 0
+            }
+            
+            // Animate the current dot
+            let currentDot = self.dots[self.currentDot]
+            let jumpAnimation = CABasicAnimation(keyPath: "position.y")
+            jumpAnimation.fromValue = currentDot.frame.origin.y
+            jumpAnimation.toValue = currentDot.frame.origin.y - 10
+            jumpAnimation.duration = 0.15
+            jumpAnimation.autoreverses = true
+            currentDot.layer?.add(jumpAnimation, forKey: "jump")
+            
+            self.currentDot = (self.currentDot + 1) % self.dots.count
         }
     }
-
+    
     func stopAnimating() {
         timer?.invalidate()
         timer = nil
+        for dot in dots {
+            dot.layer?.removeAllAnimations()
+        }
     }
 }
