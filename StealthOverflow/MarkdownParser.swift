@@ -6,11 +6,54 @@ class MarkdownProcessor {
         
         // Process bold text (**bold** or __bold__)
         processBoldText(in: attributedString)
+
+        // Then process italic text (*italic* or _italic_)
+        processItalicText(in: attributedString)
         
         // Then process inline code (`code`)
         processInlineCode(in: attributedString)
         
         return attributedString
+    }
+
+    private static func processItalicText(in attributedString: NSMutableAttributedString) {
+        let italicPattern = "(\\*|_)(?=\\S)(.+?)(?<=\\S)(\\1)"
+        
+        guard let regex = try? NSRegularExpression(pattern: italicPattern, options: []) else { return }
+        
+        let matches = regex.matches(
+            in: attributedString.string,
+            range: NSRange(location: 0, length: attributedString.length))
+        
+        for match in matches.reversed() {
+            if match.numberOfRanges >= 3 {
+                let fullRange = match.range(at: 0)
+                let contentRange = match.range(at: 2)
+                
+                // Skip if this is actually part of a bold pattern (double asterisks/underscores)
+                let fullMatch = attributedString.attributedSubstring(from: fullRange).string
+                if fullMatch.hasPrefix("**") || fullMatch.hasPrefix("__") || 
+                fullMatch.hasSuffix("**") || fullMatch.hasSuffix("__") {
+                    continue
+                }
+                
+                if contentRange.location != NSNotFound {
+                    // Create italic font
+                    let currentFont = attributedString.attribute(.font, at: contentRange.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 14)
+                    let italicFont = NSFontManager.shared.convert(currentFont, toHaveTrait: .italicFontMask)
+                    
+                    // Apply italic attributes
+                    attributedString.addAttributes([
+                        .font: italicFont,
+                        .foregroundColor: NSColor.primaryText
+                    ], range: contentRange)
+                    
+                    // Remove the markdown markers
+                    let content = attributedString.attributedSubstring(from: contentRange)
+                    attributedString.replaceCharacters(in: fullRange, with: content)
+                }
+            }
+        }
     }
     
     private static func processBoldText(in attributedString: NSMutableAttributedString) {
