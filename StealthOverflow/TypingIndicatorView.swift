@@ -19,12 +19,11 @@ class TypingIndicatorView: NSView {
 
     private func setupUI() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
-        layer?.cornerRadius = 14
+        layer?.backgroundColor = .clear
 
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = NSFont.systemFont(ofSize: 14)
-        label.textColor = .labelColor
+        label.font = NSFont.systemFont(ofSize: 30)
+        label.textColor = .white
         label.alignment = .left
         label.lineBreakMode = .byWordWrapping
 
@@ -40,7 +39,7 @@ class TypingIndicatorView: NSView {
     }
 
     private func startAnimating() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
             self.dotCount = (self.dotCount + 1) % 4
             // self.label.stringValue = "Assistant is typing" + String(repeating: ".", count: self.dotCount)
             self.label.stringValue = String(repeating: ".", count: self.dotCount)
