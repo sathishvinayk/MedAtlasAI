@@ -12,11 +12,11 @@ struct ChatUIBuilder {
     }
 
     static func buildChatUI(in container: NSView, delegate: NSTextViewDelegate, target: AnyObject, sendAction: Selector, stopAction: Selector) -> ChatUI {
-        let titleLabel = NSTextField(labelWithString: "Stealth Interview")
+        let titleLabel = NSTextField(labelWithString: "Silent Glass")
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = NSFont.boldSystemFont(ofSize: 14)
         titleLabel.alignment = .center
-        titleLabel.textColor = .labelColor
+        titleLabel.textColor = .primaryText
         titleLabel.isBezeled = false
         titleLabel.drawsBackground = false
         titleLabel.isEditable = false
@@ -24,6 +24,7 @@ struct ChatUIBuilder {
         titleLabel.lineBreakMode = .byTruncatingTail
 
         let divider = NSBox()
+        divider.fillColor = NSColor(white: 0.2, alpha: 1.0)  // Custom divider color
         divider.translatesAutoresizingMaskIntoConstraints = false
         divider.boxType = .separator
 
@@ -52,8 +53,10 @@ struct ChatUIBuilder {
         inputContainer.translatesAutoresizingMaskIntoConstraints = false
         inputContainer.wantsLayer = true
         inputContainer.layer?.cornerRadius = 12
-        inputContainer.layer?.masksToBounds = true
-        inputContainer.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.8).cgColor
+        inputContainer.layer?.masksToBounds = true 
+        inputContainer.layer?.backgroundColor = NSColor.inputContainerColor.cgColor
+        inputContainer.layer?.borderColor = .white
+        inputContainer.layer?.borderWidth = 0.3
 
         let inputScroll = NSScrollView()
         inputScroll.translatesAutoresizingMaskIntoConstraints = false
@@ -68,6 +71,7 @@ struct ChatUIBuilder {
         let textView = ChatTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 32))
         textView.minSize = NSSize(width: 0, height: 32)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.backgroundColor = NSColor(red: 3/255, green: 7/255, blue: 18/255, alpha: 0.8) // Semi-transparent dark blue
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.textContainerInset = NSSize(width: 6, height: 6)
@@ -75,6 +79,7 @@ struct ChatUIBuilder {
         textView.textContainer?.heightTracksTextView = false
         textView.font = NSFont.systemFont(ofSize: 14)
         textView.backgroundColor = .clear
+        textView.drawsBackground = true // Ensure background is drawn
         textView.delegate = delegate
         textView.isRichText = false
         textView.allowsUndo = true
@@ -83,8 +88,9 @@ struct ChatUIBuilder {
         textView.isFieldEditor = false
         textView.allowsDocumentBackgroundColorChange = true
         textView.importsGraphics = false
+        textView.insertionPointColor = NSColor.white // White cursor
         textView.usesFindBar = false
-        textView.textColor = .labelColor
+        textView.textColor = .primaryText
         textView.translatesAutoresizingMaskIntoConstraints = false
 
         inputScroll.documentView = textView
@@ -92,7 +98,7 @@ struct ChatUIBuilder {
         let sendButton = NSButton(title: "➤", target: target, action: sendAction)
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         sendButton.bezelStyle = .inline
-        sendButton.font = NSFont.systemFont(ofSize: 16)
+        sendButton.font = NSFont.systemFont(ofSize: 20, weight: .medium)
         sendButton.setButtonType(.momentaryPushIn)
         sendButton.isBordered = false
         sendButton.wantsLayer = true
@@ -100,18 +106,11 @@ struct ChatUIBuilder {
         sendButton.isEnabled = false
         sendButton.toolTip = "Send"
 
-        //  // Update send button state when text changes
-        // NotificationCenter.default.addObserver(forName: NSText.didChangeNotification, object: textView, queue: .main) { _ in
-        //     let hasText = !textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        //     sendButton.isEnabled = hasText
-        //     sendButton.contentTintColor = hasText ? .systemBlue : .disabledControlTextColor
-        // }
-
         // Create stop button (initially hidden)
         let stopButton = NSButton(title: "■", target: target, action: stopAction)
         stopButton.translatesAutoresizingMaskIntoConstraints = false
         stopButton.bezelStyle = .inline
-        stopButton.font = NSFont.systemFont(ofSize: 14)
+        stopButton.font = NSFont.systemFont(ofSize: 18, weight: .medium)
         stopButton.setButtonType(.momentaryPushIn)
         stopButton.isBordered = false
         stopButton.wantsLayer = true
@@ -129,10 +128,10 @@ struct ChatUIBuilder {
             titleLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
             titleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
 
-            divider.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            divider.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
             divider.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 0),
             divider.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: 0),
-            divider.heightAnchor.constraint(equalToConstant: 1),
+            divider.heightAnchor.constraint(equalToConstant: 2),
 
             scrollView.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
@@ -151,13 +150,13 @@ struct ChatUIBuilder {
             // Position buttons
             stopButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             stopButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            stopButton.widthAnchor.constraint(equalToConstant: 22),
-            stopButton.heightAnchor.constraint(equalToConstant: 22),
+            stopButton.widthAnchor.constraint(equalToConstant: 25),
+            stopButton.heightAnchor.constraint(equalToConstant: 25),
             
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            sendButton.widthAnchor.constraint(equalToConstant: 22),
-            sendButton.heightAnchor.constraint(equalToConstant: 22),
+            sendButton.widthAnchor.constraint(equalToConstant: 28),
+            sendButton.heightAnchor.constraint(equalToConstant: 28),
 
             messagesStack.topAnchor.constraint(equalTo: documentView.topAnchor),
             messagesStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),

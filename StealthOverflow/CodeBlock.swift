@@ -75,7 +75,8 @@ class CodeBlock: NSView {
     private func setupView() {
         bubbleView.translatesAutoresizingMaskIntoConstraints = false
         bubbleView.wantsLayer = true
-        bubbleView.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        bubbleView.layer?.backgroundColor = NSColor.codeBlockBackground.cgColor
+        bubbleView.layer?.borderColor = NSColor.codeBlockBorder.cgColor
         bubbleView.layer?.cornerRadius = 6
         bubbleView.layer?.borderWidth = 1
         bubbleView.layer?.borderColor = NSColor.separatorColor.cgColor
@@ -90,6 +91,7 @@ class CodeBlock: NSView {
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = false
+        // textView.layer?.backgroundColor = NSColor.codeBlockBackground.cgColor
         textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true

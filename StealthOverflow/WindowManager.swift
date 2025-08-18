@@ -7,8 +7,8 @@ class WindowManager {
 
     func createWindow(delegate: NSTextViewDelegate?) -> (window: TransparentPanel, contentView: NSView) {
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let windowWidth: CGFloat = 800
-        let windowHeight: CGFloat = 1200
+        let windowWidth: CGFloat = 1000
+        let windowHeight: CGFloat = 800
         let windowRect = NSRect(x: screenFrame.midX - windowWidth / 2, y: screenFrame.midY - windowHeight / 2, width: windowWidth, height: windowHeight)
 
         let window = TransparentPanel(
@@ -23,7 +23,8 @@ class WindowManager {
         window.standardWindowButton(.closeButton)?.action = #selector(closeApp)
         window.isOpaque = false
         window.hasShadow = false
-        window.backgroundColor = .clear
+        window.backgroundColor = .appBackground
+        window.appearance = NSAppearance(named: .darkAqua)
         window.level = .floating
         window.ignoresMouseEvents = false
         window.collectionBehavior = [.canJoinAllSpaces, .transient, .stationary]
@@ -47,15 +48,15 @@ class WindowManager {
             }
         }
 
-        let blur = NSVisualEffectView(frame: window.contentView!.bounds)
-        blur.autoresizingMask = [.width, .height]
-        blur.material = .underWindowBackground
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = 8
-        blur.layer?.masksToBounds = true
-        blur.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
+        let containerView = NSView(frame: window.contentView!.bounds)
+        containerView.autoresizingMask = [.width, .height]
+        // blur.material = .underWindowBackground
+        // blur.blendingMode = .behindWindow
+        // containerView.state = .active
+        containerView.wantsLayer = true
+        containerView.layer?.cornerRadius = 8
+        containerView.layer?.masksToBounds = true
+        // containerView.layer?.backgroundColor = NSColor.appBackground.cgColor  // Force your color
 
         let gearButton = NSButton(
             image: NSImage(systemSymbolName: "dial.min", accessibilityDescription: nil)!,
@@ -69,7 +70,7 @@ class WindowManager {
         gearButton.translatesAutoresizingMaskIntoConstraints = false
         gearButton.setButtonType(.momentaryChange)
         
-        window.contentView = blur
+        window.contentView = containerView
         window.contentView?.addSubview(gearButton)
         
         let accessoryView = NSView()
@@ -90,7 +91,7 @@ class WindowManager {
             ])
         }
         
-        return (window, blur)   
+        return (window, containerView)   
     }
 
     @objc func showTransparencyMenu(_ sender: NSButton) {

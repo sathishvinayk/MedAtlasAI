@@ -41,7 +41,8 @@ struct TextAttributes {
     static let codeBlock: [NSAttributedString.Key: Any] = [
         .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
         .foregroundColor: NSColor.textColor,
-        .backgroundColor: NSColor.textBackgroundColor,
+        // .backgroundColor: NSColor.textBackgroundColor,
+        .backgroundColor: NSColor.clear,
         .paragraphStyle: {
             let style = NSMutableParagraphStyle()
             style.lineHeightMultiple = 1.2
