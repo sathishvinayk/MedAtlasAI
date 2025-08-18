@@ -48,23 +48,19 @@ class TypingIndicatorView: NSView {
     }
 
     private func startAnimating() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
-            // Reset all dots to original position
-            for dot in self.dots {
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            // Animate all dots in a wave pattern
+            for (index, dot) in self.dots.enumerated() {
                 dot.layer?.removeAllAnimations()
-                dot.frame.origin.y = 0
+                
+                let jumpAnimation = CABasicAnimation(keyPath: "position.y")
+                jumpAnimation.fromValue = dot.frame.origin.y
+                jumpAnimation.toValue = dot.frame.origin.y - 10
+                jumpAnimation.duration = 0.2
+                jumpAnimation.autoreverses = true
+                jumpAnimation.beginTime = CACurrentMediaTime() + Double(index) * 0.1
+                dot.layer?.add(jumpAnimation, forKey: "wave")
             }
-            
-            // Animate the current dot
-            let currentDot = self.dots[self.currentDot]
-            let jumpAnimation = CABasicAnimation(keyPath: "position.y")
-            jumpAnimation.fromValue = currentDot.frame.origin.y
-            jumpAnimation.toValue = currentDot.frame.origin.y - 10
-            jumpAnimation.duration = 0.15
-            jumpAnimation.autoreverses = true
-            currentDot.layer?.add(jumpAnimation, forKey: "jump")
-            
-            self.currentDot = (self.currentDot + 1) % self.dots.count
         }
     }
     
