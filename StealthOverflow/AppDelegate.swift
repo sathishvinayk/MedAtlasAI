@@ -10,9 +10,10 @@ func injectHotReload() {
 }
 #endif
 
-
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
-    var windowManager: WindowManager!
+    private var startupWindowManager: StartupWindowManager!
+    private var windowManager: WindowManager!
+
     var sendButton: NSButton!
     var stopButton: NSButton!
 
@@ -20,7 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     var chatController: ChatController!
 
     var hotKeyManager: HotKeyManager!
-    var window: TransparentPanel!
+    var window: NSWindow!
     var messagesStack: NSStackView!
     var textView: NSTextView!
     var inputScroll: NSScrollView!
@@ -39,40 +40,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         #if DEBUG
         injectHotReload()
         #endif
-        
-//        NotificationCenter.default.addObserver(forName: Notification.Name("INJECTION_BUNDLE_NOTIFICATION"), object: nil, queue: .main) { _ in
-//            print("💉 Re-rendering after injection")
-//            
-//            if let contentView = NSApp.mainWindow?.contentView {
-//                contentView.subviews.forEach { $0.removeFromSuperview() }
-//
-//                let testMessage = """
-//                Testing injection...
-//
-//                Code block:
-//                ```swift
-//                print("Hello world")
-//                ```
-//                """
-//                let (_, bubble) = MessageRenderer.renderMessage(testMessage, isUser: false)
-//                bubble.frame.origin = CGPoint(x: 40, y: 100)
-//                contentView.addSubview(bubble)
-//            }
-//        }
 
         hotKeyManager = HotKeyManager()
-        setupWindow()
+        setupStartupWindow()
         KeyboardHandler.monitorEscapeKey()
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, 
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
             guard let self = self else { return }
-            self.window.makeKeyAndOrderFront(nil)
-            self.window.makeFirstResponder(self.textView)
+            if let window = self.window {
+                window.makeKeyAndOrderFront(nil)
+                if self.chatController != nil {
+                    window.makeFirstResponder(self.textView)
+                }
+            }
         }
     }
 
-    func setupWindow() {
+    func setupStartupWindow() {
+        startupWindowManager = StartupWindowManager()
+        startupWindowManager?.onStartChat = { [weak self] in
+            self?.setupChatWindow()
+        }
+        
+        window = startupWindowManager.createStartupWindow()
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    func setupChatWindow() {
+        // Clean up startup window
+        startupWindowManager?.close()
+        startupWindowManager = nil
+        
         windowManager = WindowManager()
-        let result = windowManager.createWindow(delegate: nil)
+        let result = windowManager.createWindow(delegate: self)
         window = result.window
         
         let ui = ChatUIBuilder.buildChatUI(

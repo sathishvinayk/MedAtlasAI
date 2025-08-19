@@ -133,6 +133,11 @@ class WindowManager {
         }
     }
 
+     func close() {
+        panelWindow?.close()
+        panelWindow = nil
+    }
+
     @objc func closeApp() {
         NSApp.terminate(nil)
     }
