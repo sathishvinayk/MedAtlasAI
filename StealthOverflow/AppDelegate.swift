@@ -74,6 +74,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         // Clean up startup window
         startupWindowManager?.close()
         startupWindowManager = nil
+
+        // Reset UI references before creating new window
+        self.textView = nil
+        self.sendButton = nil
+        self.stopButton = nil
         
         windowManager = WindowManager()
         let result = windowManager.createWindow(delegate: self)
@@ -116,9 +121,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     }
 
     private func updateSendButtonState() {
-        let hasText = !textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        sendButton.isEnabled = hasText
-        sendButton.contentTintColor = hasText ? .systemBlue : .disabledControlTextColor
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                let textView = self.textView,
+                let sendButton = self.sendButton else {
+                return
+            }
+            
+            let hasText = !textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            sendButton.isEnabled = hasText
+            sendButton.contentTintColor = hasText ? .systemBlue : .disabledControlTextColor
+        }
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
