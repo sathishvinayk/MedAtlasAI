@@ -63,7 +63,7 @@ class StartupWindowManager: NSObject {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         
         contentView.addSubview(stackView)
-        contentView.managerWindow = startupWindow // Use different property name
+        contentView.managerWindow = startupWindow
         contentView.interactiveButton = chatButton
         
         startupWindow.contentView = contentView
@@ -80,14 +80,15 @@ class StartupWindowManager: NSObject {
     }
     
     func setupTracking() {
-        guard let startupWindow = startupWindow, let contentView = startupWindow.contentView as? InteractiveContentView else { return }
+        guard let startupWindow = startupWindow, 
+              let contentView = startupWindow.contentView as? InteractiveContentView else { return }
         
         // Remove existing tracking area if any
         if let existingArea = trackingArea {
             startupWindow.contentView?.removeTrackingArea(existingArea)
         }
         
-        // Create tracking area for the entire content view
+        // Use full window tracking for simplicity and reliability
         let newTrackingArea = NSTrackingArea(
             rect: startupWindow.contentView!.bounds,
             options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved],
@@ -109,6 +110,13 @@ class StartupWindowManager: NSObject {
         startupWindow?.makeKeyAndOrderFront(nil)
         setupTracking()
         NSApp.activate(ignoringOtherApps: true)
+        
+        // Force initial mouse position check with a slight delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if let contentView = self.startupWindow?.contentView as? InteractiveContentView {
+                contentView.checkInitialMousePosition()
+            }
+        }
     }
     
     func close() {
@@ -128,7 +136,7 @@ class StartupWindowManager: NSObject {
 }
 
 class InteractiveContentView: NSView {
-    weak var managerWindow: NSWindow? // Renamed to avoid conflict with NSView.window
+    weak var managerWindow: NSWindow?
     weak var interactiveButton: NSButton?
     private var isMouseOverButton = false
     
@@ -144,6 +152,45 @@ class InteractiveContentView: NSView {
         let options: NSTrackingArea.Options = [.activeAlways, .mouseEnteredAndExited, .mouseMoved]
         let trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
         addTrackingArea(trackingArea)
+    }
+    
+    func checkInitialMousePosition() {
+        guard let managerWindow = managerWindow,
+              let button = interactiveButton else {
+            return
+        }
+        
+        // Get the current mouse position
+        let mouseLocation = NSEvent.mouseLocation
+        let windowFrame = managerWindow.frame
+        
+        // Check if mouse is within window bounds
+        if windowFrame.contains(mouseLocation) {
+            // Convert to window coordinates
+            let locationInWindow = NSPoint(
+                x: mouseLocation.x - windowFrame.origin.x,
+                y: mouseLocation.y - windowFrame.origin.y
+            )
+            
+            // Convert to view coordinates
+            let locationInView = convert(locationInWindow, from: nil)
+            
+            // Convert to button coordinates
+            let buttonLocation = convert(locationInView, to: button)
+            
+            // Check if mouse is over button
+            if button.bounds.contains(buttonLocation) {
+                isMouseOverButton = true
+                managerWindow.ignoresMouseEvents = false
+                NSCursor.pointingHand.set()
+                return
+            }
+        }
+        
+        // If not over button or not in window
+        isMouseOverButton = false
+        managerWindow.ignoresMouseEvents = true
+        NSCursor.arrow.set()
     }
     
     override func mouseEntered(with event: NSEvent) {
@@ -172,11 +219,11 @@ class InteractiveContentView: NSView {
         
         if button.bounds.contains(buttonLocation) {
             isMouseOverButton = true
-            managerWindow.ignoresMouseEvents = false // Enable mouse events for button
+            managerWindow.ignoresMouseEvents = false
             NSCursor.pointingHand.set()
         } else {
             isMouseOverButton = false
-            managerWindow.ignoresMouseEvents = true // Disable mouse events
+            managerWindow.ignoresMouseEvents = true
             NSCursor.arrow.set()
         }
     }
