@@ -29,7 +29,7 @@ class StartupWindowManager: NSObject {
         startupWindow.titleVisibility = .hidden
         startupWindow.titlebarAppearsTransparent = true
         startupWindow.isReleasedWhenClosed = false
-        startupWindow.backgroundColor = NSColor.windowBackgroundColor // FIXED: Use standard color instead of .appBackground
+        startupWindow.backgroundColor = .appBackground // FIXED: Use standard color instead of .appBackground
         startupWindow.level = .floating
         startupWindow.hasShadow = true
         startupWindow.alphaValue = 0.7
@@ -43,7 +43,7 @@ class StartupWindowManager: NSObject {
         
         // Title
         let titleLabel = NSTextField(labelWithString: "Silent Glass")
-        titleLabel.font = NSFont.systemFont(ofSize: 32, weight: .bold)
+        titleLabel.font = NSFont.systemFont(ofSize: 22)
         titleLabel.textColor = .labelColor
         
         // Logo
@@ -52,9 +52,9 @@ class StartupWindowManager: NSObject {
         logo.imageScaling = .scaleProportionallyUpOrDown
         
         // Chat Button - Modern styling
-        chatButton = NSButton(title: "Start Chat", target: self, action: #selector(handleChatButton))
-        chatButton?.bezelStyle = .rounded
-        chatButton?.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
+        chatButton = NSButton(title: "Chat AI", target: self, action: #selector(handleChatButton))
+        // chatButton?.bezelStyle = .rounded
+        chatButton?.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
         chatButton?.wantsLayer = true
         
         // Modern button styling with hover effects
@@ -80,22 +80,22 @@ class StartupWindowManager: NSObject {
             stackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             logo.widthAnchor.constraint(equalToConstant: 150),
             logo.heightAnchor.constraint(equalToConstant: 150),
-            chatButton!.widthAnchor.constraint(equalToConstant: 140),
-            chatButton!.heightAnchor.constraint(equalToConstant: 48)
+            chatButton!.widthAnchor.constraint(equalToConstant: 80),
+            chatButton!.heightAnchor.constraint(equalToConstant: 30)
         ])
         
         // Set up button layer after constraints are applied
         DispatchQueue.main.async {
-            self.chatButton?.layer?.cornerRadius = 12
+            self.chatButton?.layer?.cornerRadius = 6
             self.chatButton?.layer?.masksToBounds = true
             self.chatButton?.layer?.backgroundColor = NSColor.systemBlue.cgColor
             
             // Set attributed title after button is fully configured
             self.chatButton?.attributedTitle = NSAttributedString(
-                string: "Start Chat",
+                string: "Chat AI",
                 attributes: [
                     .foregroundColor: NSColor.white,
-                    .font: NSFont.systemFont(ofSize: 18, weight: .semibold)
+                    .font: NSFont.systemFont(ofSize: 14, weight: .semibold)
                 ]
             )
         }
@@ -296,7 +296,8 @@ class InteractiveContentView: NSView {
                     button.layer?.borderColor = nil
                 }
                 
-                button.layer?.cornerRadius = 12
+                // Remove this line - corner radius is already set initially
+                // button.layer?.cornerRadius = 12
             }
         }
     }
