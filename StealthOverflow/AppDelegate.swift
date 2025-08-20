@@ -13,6 +13,7 @@ func injectHotReload() {
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     private var startupWindowManager: StartupWindowManager!
     private var windowManager: WindowManager!
+    private var windowMovementManager: WindowMovementManager! // Add this
 
     var sendButton: NSButton!
     var stopButton: NSButton!
@@ -43,6 +44,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
         FontManager.shared.registerFontsSynchronously()
         hotKeyManager = HotKeyManager()
+        windowMovementManager = WindowMovementManager() // Initialize here
         setupStartupWindow()
         KeyboardHandler.monitorEscapeKey()
 
@@ -69,9 +71,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         
         window = startupWindowManager.createStartupWindow()
         window?.makeKeyAndOrderFront(nil)
+        // Enable movement ONLY for startup window
+        if let window = window {
+            windowMovementManager.enableWindowMovement(for: window)
+        }
     }
 
     func setupChatWindow() {
+        // Ensure we're on main thread
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.setupChatWindow()
+            }
+            return
+        }
+        
+        windowMovementManager.disableWindowMovement()
+        
         // Clean up startup window
         startupWindowManager?.close()
         startupWindowManager = nil
@@ -150,5 +166,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     }   
     func textDidChange(_ notification: Notification) {
         chatController.textDidChange()
+    }
+
+    // Add cleanup in deinit if needed
+    deinit {
+        windowMovementManager.disableWindowMovement()
     }
 }

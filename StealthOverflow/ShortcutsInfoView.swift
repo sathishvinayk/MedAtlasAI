@@ -71,9 +71,15 @@ class EnhancedShortcutsInfoView: NSView {
         
         let escKey = EnhancedKeyCapView(key: "Esc", fontSize: 10, width: 40)
         let quitLabel = NSTextField(labelWithString: "Quit")
+
+        // Add movement shortcuts
+        let moveCommandKey = EnhancedKeyCapView(key: "⌘", fontSize: 14, width: 32)
+        let arrowsLabel = NSTextField(labelWithString: "↑↓←→")
+        arrowsLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        let moveLabel = NSTextField(labelWithString: "Move Window")
         
         // Configure labels
-        [plusLabel, hideLabel, quitLabel].forEach { label in
+        [plusLabel, hideLabel, quitLabel, arrowsLabel, moveLabel].forEach { label in
             label.font = NSFont.systemFont(ofSize: 12, weight: .regular)
             label.textColor = NSColor.white.withAlphaComponent(0.8)
             label.isBezeled = false
@@ -93,9 +99,14 @@ class EnhancedShortcutsInfoView: NSView {
         escRow.orientation = .horizontal
         escRow.spacing = 6
         escRow.alignment = .centerY
+
+        let moveRow = NSStackView(views: [moveCommandKey, arrowsLabel, moveLabel])
+        moveRow.orientation = .horizontal
+        moveRow.spacing = 6
+        moveRow.alignment = .centerY
         
         // Main stack
-        let mainStack = NSStackView(views: [titleLabel, commandRow, escRow])
+        let mainStack = NSStackView(views: [titleLabel, commandRow, escRow, moveRow])
         mainStack.orientation = .vertical
         mainStack.spacing = 10
         mainStack.alignment = .leading
