@@ -40,5 +40,8 @@
         <string>Oxanium-ExtraBold.ttf</string>
         <string>Lato-Italic.ttf</string>
     </array>
+
+    <key>NSAppleEventsUsageDescription</key>
+    <string>StealthOverflow needs accessibility access to monitor global Escape key events for quick app termination.</string>
 </dict>
 </plist>

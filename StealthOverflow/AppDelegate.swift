@@ -13,8 +13,14 @@ func injectHotReload() {
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     private var startupWindowManager: StartupWindowManager!
     private var windowManager: WindowManager!
-    private var windowMovementManager: WindowMovementManager! // Add this
+    // private var windowMovementManager: WindowMovementManager! // Add this
+    private let moveDistance: CGFloat = 10.0 // Pixels to move per key press
 
+    // Add this enum for direction
+    enum MoveDirection {
+        case up, down, left, right
+    }
+    
     var sendButton: NSButton!
     var stopButton: NSButton!
 
@@ -27,6 +33,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     var textView: NSTextView!
     var inputScroll: NSScrollView!
     var inputHeightConstraint: NSLayoutConstraint!
+
+    func moveWindow(direction: MoveDirection) {
+        guard let window = NSApplication.shared.mainWindow else { return }
+        
+        var newOrigin = window.frame.origin
+        
+        switch direction {
+        case .up:
+            newOrigin.y += moveDistance
+        case .down:
+            newOrigin.y -= moveDistance
+        case .left:
+            newOrigin.x -= moveDistance
+        case .right:
+            newOrigin.x += moveDistance
+        }
+        
+        // Ensure window stays on screen
+        let screenFrame = NSScreen.main?.visibleFrame ?? .zero
+        let windowSize = window.frame.size
+        
+        newOrigin.x = max(screenFrame.minX, min(newOrigin.x, screenFrame.maxX - windowSize.width))
+        newOrigin.y = max(screenFrame.minY, min(newOrigin.y, screenFrame.maxY - windowSize.height))
+        
+        window.setFrameOrigin(newOrigin)
+    }
 
     func toggleStealthMode() {
         isStealthVisible.toggle()
@@ -44,9 +76,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
         FontManager.shared.registerFontsSynchronously()
         hotKeyManager = HotKeyManager()
-        windowMovementManager = WindowMovementManager() // Initialize here
+        // windowMovementManager = WindowMovementManager() // Initialize here
         setupStartupWindow()
-        KeyboardHandler.monitorEscapeKey()
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, 
@@ -62,6 +93,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
             }
         }
     }
+    
+    func applicationWillTerminate(_ notification: Notification) {}
 
     func setupStartupWindow() {
         startupWindowManager = StartupWindowManager()
@@ -72,9 +105,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         window = startupWindowManager.createStartupWindow()
         window?.makeKeyAndOrderFront(nil)
         // Enable movement ONLY for startup window
-        if let window = window {
-            windowMovementManager.enableWindowMovement(for: window)
-        }
+        // if let window = window {
+        //     windowMovementManager.enableWindowMovement(for: window)
+        // }
     }
 
     func setupChatWindow() {
@@ -86,7 +119,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
             return
         }
         
-        windowMovementManager.disableWindowMovement()
+        // windowMovementManager.disableWindowMovement()
         
         // Clean up startup window
         startupWindowManager?.close()
@@ -170,6 +203,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
     // Add cleanup in deinit if needed
     deinit {
-        windowMovementManager.disableWindowMovement()
+        // windowMovementManager.disableWindowMovement()
     }
 }
