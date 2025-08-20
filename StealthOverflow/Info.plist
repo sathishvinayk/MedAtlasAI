@@ -30,5 +30,15 @@
             </dict>
         </dict>
     </dict>
+
+    <key>ATSApplicationFontsPath</key>
+    <array>
+        <string>Oxanium-Regular.ttf</string>
+        <string>Oxanium-Medium.ttf</string>
+        <string>Oxanium-SemiBold.ttf</string>
+        <string>Oxanium-Bold.ttf</string>
+        <string>Oxanium-ExtraBold.ttf</string>
+        <string>Lato-Italic.ttf</string>
+    </array>
 </dict>
 </plist>
