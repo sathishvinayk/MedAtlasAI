@@ -5,7 +5,7 @@ class StartupWindowManager: NSObject {
     private var chatButton: NSButton?
     private var trackingArea: NSTrackingArea?
     var onStartChat: (() -> Void)?
-    
+
     func createStartupWindow() -> NSWindow? {
         let windowWidth: CGFloat = 600
         let windowHeight: CGFloat = 500
@@ -41,16 +41,56 @@ class StartupWindowManager: NSObject {
         contentView.layer?.cornerRadius = 8
         contentView.layer?.masksToBounds = true
         
-        // Title
-        let titleLabel = NSTextField(labelWithString: "Silent Glass")
-        titleLabel.font = NSFont.systemFont(ofSize: 22)
-        titleLabel.textColor = .labelColor
-        
         // Logo
         let logo = NSImageView()
         logo.image = NSImage(named: "AppIcon") ?? NSImage(systemSymbolName: "message", accessibilityDescription: nil)
         logo.imageScaling = .scaleProportionallyUpOrDown
-        
+
+        // Bold with 3D shadow effect
+        let titleLabel = NSTextField(labelWithString: "SilentGlass")
+        if let oxaniumFont = NSFont(name: "Oxanium-Bold", size: 32) {
+            let attributedString = NSAttributedString(
+                string: "Silent Glass",
+                attributes: [
+                    .font: oxaniumFont,
+                    .foregroundColor: NSColor.white,
+                    .kern: 2.0
+                ]
+            )
+            titleLabel.attributedStringValue = attributedString
+            
+            // 3D shadow effect
+            titleLabel.wantsLayer = true
+            titleLabel.shadow = NSShadow()
+            titleLabel.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.6)
+            titleLabel.shadow?.shadowBlurRadius = 0
+            titleLabel.shadow?.shadowOffset = NSSize(width: 2, height: -2)
+        }
+
+        let subTitle = NSTextField(labelWithString: "An AI Coding and Interview Assistant")
+        if let lato = NSFont(name: "Lato-Italic", size: 14) {
+            let attributedString = NSAttributedString(
+                string: "An AI Coding and Interview Assistant",
+                attributes: [
+                    .font: lato,
+                    .foregroundColor: NSColor.white,
+                    .kern: 2.0
+                ]
+            )
+            subTitle.attributedStringValue = attributedString
+            
+            // 3D shadow effect
+            subTitle.wantsLayer = true
+            subTitle.shadow = NSShadow()
+            subTitle.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.6)
+            subTitle.shadow?.shadowBlurRadius = 0
+            subTitle.shadow?.shadowOffset = NSSize(width: 2, height: -2)
+        }
+
+          // Create shortcuts info view
+        let shortcutsView = EnhancedShortcutsInfoView()
+        shortcutsView.translatesAutoresizingMaskIntoConstraints = false
+
         // Chat Button - Modern styling
         chatButton = NSButton(title: "Chat AI", target: self, action: #selector(handleChatButton))
         // chatButton?.bezelStyle = .rounded
@@ -63,13 +103,15 @@ class StartupWindowManager: NSObject {
         chatButton?.setButtonType(.momentaryPushIn)
         
         // Stack View
-        let stackView = NSStackView(views: [titleLabel, logo, chatButton!])
+        let stackView = NSStackView(views: [logo, titleLabel, subTitle, shortcutsView, chatButton!, ])
         stackView.orientation = .vertical
         stackView.alignment = .centerX
-        stackView.spacing = 30
+        stackView.spacing = 2
         stackView.translatesAutoresizingMaskIntoConstraints = false
         
         contentView.addSubview(stackView)
+        // contentView.addSubview(shortcutsView) // Add shortcuts view separately
+
         contentView.managerWindow = startupWindow
         contentView.interactiveButton = chatButton
         
@@ -77,12 +119,18 @@ class StartupWindowManager: NSObject {
         
         NSLayoutConstraint.activate([
             stackView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-            stackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            logo.widthAnchor.constraint(equalToConstant: 150),
-            logo.heightAnchor.constraint(equalToConstant: 150),
+            stackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor, constant: -50),
+            logo.widthAnchor.constraint(equalToConstant: 200),
+            logo.heightAnchor.constraint(equalToConstant: 200),
             chatButton!.widthAnchor.constraint(equalToConstant: 80),
             chatButton!.heightAnchor.constraint(equalToConstant: 30)
         ])
+
+          // Add some spacing between elements
+        stackView.setCustomSpacing(-50, after: logo)     // More space after logo
+        stackView.setCustomSpacing(10, after: titleLabel) // More space after title
+        stackView.setCustomSpacing(100, after: subTitle) // More space after title
+        stackView.setCustomSpacing(50, after: shortcutsView) // More space after title
         
         // Set up button layer after constraints are applied
         DispatchQueue.main.async {

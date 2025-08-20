@@ -37,10 +37,11 @@ class HotKeyManager {
     private func register() {
         var hotKeyRef: EventHotKeyRef? = nil
         let hotKeyID = EventHotKeyID(signature: OSType(UInt32(truncatingIfNeeded: "stea".hashValue)), id: 1)
-        RegisterEventHotKey(UInt32(kVK_ANSI_X), UInt32(cmdKey | shiftKey), hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+        
+        // Changed from: UInt32(cmdKey | shiftKey) to just: UInt32(cmdKey)
+        RegisterEventHotKey(UInt32(kVK_ANSI_X), UInt32(cmdKey), hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
 
         let eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), hotKeyCallback, 1, [eventType], nil, &hotKeyHandler)
     }
 }
-
