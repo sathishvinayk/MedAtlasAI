@@ -103,7 +103,7 @@ class StartupWindowManager: NSObject {
         chatButton?.setButtonType(.momentaryPushIn)
         
         // Stack View
-        let stackView = NSStackView(views: [logo, titleLabel, subTitle, shortcutsView, chatButton!, ])
+        let stackView = NSStackView(views: [logo, titleLabel, subTitle, chatButton!, shortcutsView])
         stackView.orientation = .vertical
         stackView.alignment = .centerX
         stackView.spacing = 2
@@ -119,7 +119,7 @@ class StartupWindowManager: NSObject {
         
         NSLayoutConstraint.activate([
             stackView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-            stackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor, constant: -50),
+            stackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor, constant: -30),
             logo.widthAnchor.constraint(equalToConstant: 200),
             logo.heightAnchor.constraint(equalToConstant: 200),
             chatButton!.widthAnchor.constraint(equalToConstant: 80),
@@ -127,10 +127,11 @@ class StartupWindowManager: NSObject {
         ])
 
           // Add some spacing between elements
-        stackView.setCustomSpacing(-50, after: logo)     // More space after logo
+        stackView.setCustomSpacing(-20, after: logo)     // More space after logo
         stackView.setCustomSpacing(10, after: titleLabel) // More space after title
-        stackView.setCustomSpacing(100, after: subTitle) // More space after title
-        stackView.setCustomSpacing(50, after: shortcutsView) // More space after title
+        stackView.setCustomSpacing(50, after: subTitle) // More space after  subtitle
+        stackView.setCustomSpacing(50, after: chatButton!) // More space after Chatbutton
+        stackView.setCustomSpacing(05, after: shortcutsView) // More space after title
         
         // Set up button layer after constraints are applied
         DispatchQueue.main.async {
