@@ -3,8 +3,10 @@ import Cocoa
 class StartupWindowManager: NSObject {
     private var startupWindow: NSWindow?
     private var chatButton: NSButton?
+    private var codeChatButton: NSButton? // New button
     private var trackingArea: NSTrackingArea?
     var onStartChat: (() -> Void)?
+    var onStartCodeChat: (() -> Void)? // New callback
 
     func createStartupWindow() -> NSWindow? {
         let windowWidth: CGFloat = 600
@@ -29,12 +31,12 @@ class StartupWindowManager: NSObject {
         startupWindow.titleVisibility = .hidden
         startupWindow.titlebarAppearsTransparent = true
         startupWindow.isReleasedWhenClosed = false
-        startupWindow.backgroundColor = .appBackground // FIXED: Use standard color instead of .appBackground
+        startupWindow.backgroundColor = .appBackground
         startupWindow.level = .floating
         startupWindow.hasShadow = true
         startupWindow.alphaValue = 0.7
         startupWindow.isMovable = false
-        startupWindow.ignoresMouseEvents = true // Start ignoring all mouse events
+        startupWindow.ignoresMouseEvents = true
         
         let contentView = InteractiveContentView(frame: startupWindow.contentView!.bounds)
         contentView.wantsLayer = true
@@ -46,7 +48,7 @@ class StartupWindowManager: NSObject {
         logo.image = NSImage(named: "AppIcon") ?? NSImage(systemSymbolName: "message", accessibilityDescription: nil)
         logo.imageScaling = .scaleProportionallyUpOrDown
 
-        // Bold with 3D shadow effect
+        // Title
         let titleLabel = NSTextField(labelWithString: "SilentGlass")
         if let oxaniumFont = NSFont(name: "Oxanium-Bold", size: 32) {
             let attributedString = NSAttributedString(
@@ -59,7 +61,6 @@ class StartupWindowManager: NSObject {
             )
             titleLabel.attributedStringValue = attributedString
             
-            // 3D shadow effect
             titleLabel.wantsLayer = true
             titleLabel.shadow = NSShadow()
             titleLabel.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.6)
@@ -79,7 +80,6 @@ class StartupWindowManager: NSObject {
             )
             subTitle.attributedStringValue = attributedString
             
-            // 3D shadow effect
             subTitle.wantsLayer = true
             subTitle.shadow = NSShadow()
             subTitle.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.6)
@@ -87,33 +87,41 @@ class StartupWindowManager: NSObject {
             subTitle.shadow?.shadowOffset = NSSize(width: 2, height: -2)
         }
 
-          // Create shortcuts info view
+        // Create shortcuts info view
         let shortcutsView = EnhancedShortcutsInfoView()
         shortcutsView.translatesAutoresizingMaskIntoConstraints = false
 
-        // Chat Button - Modern styling
-        chatButton = NSButton(title: "Chat AI", target: self, action: #selector(handleChatButton))
-        // chatButton?.bezelStyle = .rounded
-        chatButton?.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        chatButton?.wantsLayer = true
+        // Chat Buttons
+        chatButton = createChatButton(title: "Chat AI", action: #selector(handleChatButton))
+        codeChatButton = createChatButton(title: "Code AI", action: #selector(handleCodeChatButton))
         
-        // Modern button styling with hover effects
-        chatButton?.isBordered = false
-        chatButton?.contentTintColor = .white
-        chatButton?.setButtonType(.momentaryPushIn)
+        // Vertical separator line
+        let separator = NSView()
+        separator.wantsLayer = true
+        separator.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.3).cgColor
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Button container with both buttons and separator
+        let buttonContainer = NSStackView(views: [chatButton!, separator, codeChatButton!])
+        buttonContainer.orientation = .horizontal
+        buttonContainer.spacing = 8
+        buttonContainer.alignment = .centerY
+        buttonContainer.translatesAutoresizingMaskIntoConstraints = false
         
         // Stack View
-        let stackView = NSStackView(views: [logo, titleLabel, subTitle, chatButton!, shortcutsView])
+        let stackView = NSStackView(views: [logo, titleLabel, subTitle, buttonContainer, shortcutsView])
         stackView.orientation = .vertical
         stackView.alignment = .centerX
         stackView.spacing = 2
         stackView.translatesAutoresizingMaskIntoConstraints = false
         
         contentView.addSubview(stackView)
-        // contentView.addSubview(shortcutsView) // Add shortcuts view separately
-
         contentView.managerWindow = startupWindow
-        contentView.interactiveButton = chatButton
+        
+        // Register both buttons for mouse tracking
+        if let chatButton = chatButton, let codeChatButton = codeChatButton {
+            contentView.interactiveButtons = [chatButton, codeChatButton]
+        }
         
         startupWindow.contentView = contentView
         
@@ -123,33 +131,52 @@ class StartupWindowManager: NSObject {
             logo.widthAnchor.constraint(equalToConstant: 200),
             logo.heightAnchor.constraint(equalToConstant: 200),
             chatButton!.widthAnchor.constraint(equalToConstant: 80),
-            chatButton!.heightAnchor.constraint(equalToConstant: 30)
+            chatButton!.heightAnchor.constraint(equalToConstant: 30),
+            codeChatButton!.widthAnchor.constraint(equalToConstant: 80),
+            codeChatButton!.heightAnchor.constraint(equalToConstant: 30),
+            separator.widthAnchor.constraint(equalToConstant: 1),
+            separator.heightAnchor.constraint(equalToConstant: 20)
         ])
 
-          // Add some spacing between elements
-        stackView.setCustomSpacing(-20, after: logo)     // More space after logo
-        stackView.setCustomSpacing(10, after: titleLabel) // More space after title
-        stackView.setCustomSpacing(50, after: subTitle) // More space after  subtitle
-        stackView.setCustomSpacing(50, after: chatButton!) // More space after Chatbutton
-        stackView.setCustomSpacing(05, after: shortcutsView) // More space after title
+        // Add some spacing between elements
+        stackView.setCustomSpacing(-20, after: logo)
+        stackView.setCustomSpacing(10, after: titleLabel)
+        stackView.setCustomSpacing(50, after: subTitle)
+        stackView.setCustomSpacing(50, after: buttonContainer)
+        stackView.setCustomSpacing(05, after: shortcutsView)
         
-        // Set up button layer after constraints are applied
+        // Set up button layers after constraints are applied
         DispatchQueue.main.async {
-            self.chatButton?.layer?.cornerRadius = 6
-            self.chatButton?.layer?.masksToBounds = true
-            self.chatButton?.layer?.backgroundColor = NSColor.systemBlue.cgColor
+            self.setupButtonAppearance()
+        }
+        
+        return startupWindow
+    }
+    
+    private func createChatButton(title: String, action: Selector) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        button.wantsLayer = true
+        button.isBordered = false
+        button.contentTintColor = .white
+        button.setButtonType(.momentaryPushIn)
+        return button
+    }
+    
+    private func setupButtonAppearance() {
+        [chatButton, codeChatButton].forEach { button in
+            button?.layer?.cornerRadius = 6
+            button?.layer?.masksToBounds = true
+            button?.layer?.backgroundColor = NSColor.systemBlue.cgColor
             
-            // Set attributed title after button is fully configured
-            self.chatButton?.attributedTitle = NSAttributedString(
-                string: "Chat AI",
+            button?.attributedTitle = NSAttributedString(
+                string: button?.title ?? "",
                 attributes: [
                     .foregroundColor: NSColor.white,
                     .font: NSFont.systemFont(ofSize: 14, weight: .semibold)
                 ]
             )
         }
-        
-        return startupWindow
     }
     
     func setupTracking() {
@@ -158,12 +185,10 @@ class StartupWindowManager: NSObject {
                 let startupWindow = self.startupWindow,
                 let contentView = startupWindow.contentView else { return }
             
-            // Remove existing tracking area if any
             if let existingArea = self.trackingArea {
                 contentView.removeTrackingArea(existingArea)
             }
             
-            // Use full window tracking for simplicity and reliability
             let newTrackingArea = NSTrackingArea(
                 rect: contentView.bounds,
                 options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved],
@@ -182,6 +207,12 @@ class StartupWindowManager: NSObject {
         close()
     }
     
+    @objc private func handleCodeChatButton() {
+        print("Code Chat button clicked!")
+        onStartCodeChat?()
+        close()
+    }
+    
     func show() {
         guard let startupWindow = startupWindow else { return }
         
@@ -189,7 +220,6 @@ class StartupWindowManager: NSObject {
         setupTracking()
         NSApp.activate(ignoringOtherApps: true)
         
-        // Force initial mouse position check with a slight delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             if let contentView = startupWindow.contentView as? InteractiveContentView {
                 contentView.checkInitialMousePosition()
@@ -198,95 +228,81 @@ class StartupWindowManager: NSObject {
     }
     
     func close() {
-        // Capture weak references to avoid potential retain cycles
         let trackingArea = self.trackingArea
         let startupWindow = self.startupWindow
         
-        // Clean up on main thread
         DispatchQueue.main.async { 
-            
-            // Remove tracking area safely
             if let area = trackingArea, let contentView = startupWindow?.contentView {
                 contentView.removeTrackingArea(area)
             }
             
-            // Reset cursor
             NSCursor.arrow.set()
-            
-            // Close window
             startupWindow?.close()
         }
-        // Clear references on main thread
+        
         self.trackingArea = nil
         self.startupWindow = nil
         self.chatButton = nil
+        self.codeChatButton = nil
     }
     
     deinit {
         startupWindow?.close()
         trackingArea = nil
         chatButton = nil
+        codeChatButton = nil
     }
 }
 
+// Updated InteractiveContentView to handle multiple buttons
 class InteractiveContentView: NSView {
     weak var managerWindow: NSWindow?
-    weak var interactiveButton: NSButton?
+    var interactiveButtons: [NSButton] = [] // Now supports multiple buttons
     private var isMouseOverButton = false
     
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         
-        // Remove old tracking areas
         for trackingArea in trackingAreas {
             removeTrackingArea(trackingArea)
         }
         
-        // Add tracking for the entire view
         let options: NSTrackingArea.Options = [.activeAlways, .mouseEnteredAndExited, .mouseMoved]
         let trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
         addTrackingArea(trackingArea)
     }
     
     func checkInitialMousePosition() {
-        guard let managerWindow = managerWindow,
-              let button = interactiveButton else {
-            return
-        }
+        guard let managerWindow = managerWindow else { return }
         
-        // Get the current mouse position
         let mouseLocation = NSEvent.mouseLocation
         let windowFrame = managerWindow.frame
         
-        // Check if mouse is within window bounds
         if windowFrame.contains(mouseLocation) {
-            // Convert to window coordinates
             let locationInWindow = NSPoint(
                 x: mouseLocation.x - windowFrame.origin.x,
                 y: mouseLocation.y - windowFrame.origin.y
             )
             
-            // Convert to view coordinates
             let locationInView = convert(locationInWindow, from: nil)
             
-            // Convert to button coordinates
-            let buttonLocation = convert(locationInView, to: button)
-            
-            // Check if mouse is over button
-            if button.bounds.contains(buttonLocation) {
-                isMouseOverButton = true
-                managerWindow.ignoresMouseEvents = false
-                NSCursor.pointingHand.set()
-                animateButtonHover(true, button: button)
-                return
+            // Check all interactive buttons
+            for button in interactiveButtons {
+                let buttonLocation = convert(locationInView, to: button)
+                if button.bounds.contains(buttonLocation) {
+                    isMouseOverButton = true
+                    managerWindow.ignoresMouseEvents = false
+                    NSCursor.pointingHand.set()
+                    animateButtonHover(true, button: button)
+                    return
+                }
             }
         }
         
-        // If not over button or not in window
         isMouseOverButton = false
         managerWindow.ignoresMouseEvents = true
         NSCursor.arrow.set()
-        animateButtonHover(false, button: interactiveButton)
+        interactiveButtons.forEach { animateButtonHover(false, button: $0) }
     }
     
     override func mouseEntered(with event: NSEvent) {
@@ -301,29 +317,36 @@ class InteractiveContentView: NSView {
         isMouseOverButton = false
         managerWindow?.ignoresMouseEvents = true
         NSCursor.arrow.set()
-        animateButtonHover(false, button: interactiveButton)
+        interactiveButtons.forEach { animateButtonHover(false, button: $0) }
     }
     
     private func checkMousePosition(_ event: NSEvent) {
-        guard let button = interactiveButton, let managerWindow = managerWindow else {
+        guard let managerWindow = managerWindow else {
             managerWindow?.ignoresMouseEvents = true
             NSCursor.arrow.set()
             return
         }
         
         let locationInView = convert(event.locationInWindow, from: nil)
-        let buttonLocation = convert(locationInView, to: button)
+        var foundHover = false
         
-        if button.bounds.contains(buttonLocation) {
-            isMouseOverButton = true
-            managerWindow.ignoresMouseEvents = false
-            NSCursor.pointingHand.set()
-            animateButtonHover(true, button: button)
-        } else {
+        for button in interactiveButtons {
+            let buttonLocation = convert(locationInView, to: button)
+            if button.bounds.contains(buttonLocation) {
+                foundHover = true
+                isMouseOverButton = true
+                managerWindow.ignoresMouseEvents = false
+                NSCursor.pointingHand.set()
+                animateButtonHover(true, button: button)
+            } else {
+                animateButtonHover(false, button: button)
+            }
+        }
+        
+        if !foundHover {
             isMouseOverButton = false
             managerWindow.ignoresMouseEvents = true
             NSCursor.arrow.set()
-            animateButtonHover(false, button: button)
         }
     }
 
@@ -344,9 +367,6 @@ class InteractiveContentView: NSView {
                     button.layer?.borderWidth = 0
                     button.layer?.borderColor = nil
                 }
-                
-                // Remove this line - corner radius is already set initially
-                // button.layer?.cornerRadius = 12
             }
         }
     }
@@ -359,10 +379,10 @@ class InteractiveContentView: NSView {
             } completionHandler: {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.1
-                    // Check if mouse is still over button using a safe approach
+                    // Check if mouse is still over button
                     if let window = button.window, 
-                    let contentView = window.contentView as? InteractiveContentView,
-                    contentView.isMouseOverButton {
+                       let contentView = window.contentView as? InteractiveContentView,
+                       contentView.isMouseOverButton {
                         button.layer?.backgroundColor = NSColor.systemBlue.withSystemEffect(.pressed).cgColor
                     } else {
                         button.layer?.backgroundColor = NSColor.systemBlue.cgColor
@@ -373,15 +393,18 @@ class InteractiveContentView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
-        // If mouse is over button, let the button handle the event
         if !isMouseOverButton {
-            // Ignore clicks outside button area
             return
         }
         
-        // Button press animation
-        if let button = interactiveButton {
-            animateButtonPress(button)
+        let locationInView = convert(event.locationInWindow, from: nil)
+        for button in interactiveButtons {
+            let buttonLocation = convert(locationInView, to: button)
+            if button.bounds.contains(buttonLocation) {
+                animateButtonPress(button)
+                // The button's target-action will handle the actual click
+                break
+            }
         }
         
         super.mouseDown(with: event)
