@@ -41,6 +41,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         injectHotReload()
         #endif
 
+        FontManager.shared.registerFontsSynchronously()
         hotKeyManager = HotKeyManager()
         setupStartupWindow()
         KeyboardHandler.monitorEscapeKey()
