@@ -4,6 +4,11 @@ import Cocoa
 class WindowManager {
     private var panelWindow: NSWindow? // <-- store a reference to the window
     private var settingsPopover: NSPopover?  // store the active popover
+     // Add this method to apply saved transparency on launch
+    func applySavedTransparency() {
+        let saved = UserDefaults.standard.string(forKey: "SelectedTransparency") ?? "100%"
+        applyTransparency(percentString: saved)
+    }
 
     func createWindow(delegate: NSTextViewDelegate?) -> (window: TransparentPanel, contentView: NSView) {
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -38,6 +43,7 @@ class WindowManager {
         window.styleMask.insert(.resizable)
 
         DispatchQueue.main.async {
+            self.applySavedTransparency()
             for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
                 if let btn = window.standardWindowButton(type) {
                     var frame = btn.frame
@@ -112,20 +118,28 @@ class WindowManager {
             menu.addItem(item)
         }
 
-        // Show the menu below the button
         NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: sender)
     }
 
-    @objc func transparencyMenuItemClicked(_ sender: NSMenuItem) {
+     @objc func transparencyMenuItemClicked(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
         
         UserDefaults.standard.set(value, forKey: "SelectedTransparency")
         applyTransparency(percentString: value)
+        
+        // Update menu state for all items
+        if let menu = sender.menu {
+            for item in menu.items {
+                if let itemValue = item.representedObject as? String {
+                    item.state = (itemValue == value) ? .on : .off
+                }
+            }
+        }
     }
 
-
     func applyTransparency(percentString: String) {
-        guard let window = NSApp.windows.first else { return }
+        // Use the stored panelWindow reference instead of NSApp.windows.first
+        guard let window = panelWindow else { return }
 
         let number = percentString.replacingOccurrences(of: "%", with: "")
         if let percent = Double(number) {
@@ -133,7 +147,7 @@ class WindowManager {
         }
     }
 
-     func close() {
+    func close() {
         panelWindow?.close()
         panelWindow = nil
     }

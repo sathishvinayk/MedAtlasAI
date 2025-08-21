@@ -151,10 +151,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         
         window = startupWindowManager.createStartupWindow()
         window?.makeKeyAndOrderFront(nil)
-        // Enable movement ONLY for startup window
-        // if let window = window {
-        //     windowMovementManager.enableWindowMovement(for: window)
-        // }
+        
+         // ADD THIS LINE TO AUTOMATICALLY START CHAT
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.setupChatWindow()
+        }
     }
 
     func setupChatWindow() {
