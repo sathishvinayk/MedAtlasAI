@@ -35,29 +35,75 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     var inputHeightConstraint: NSLayoutConstraint!
 
     func moveWindow(direction: MoveDirection) {
-        guard let window = NSApplication.shared.mainWindow else { return }
+        let windows = NSApplication.shared.windows
+        print("=== WINDOW MOVEMENT DEBUG ===")
+        print("Found \(windows.count) windows:")
         
-        var newOrigin = window.frame.origin
-        
-        switch direction {
-        case .up:
-            newOrigin.y += moveDistance
-        case .down:
-            newOrigin.y -= moveDistance
-        case .left:
-            newOrigin.x -= moveDistance
-        case .right:
-            newOrigin.x += moveDistance
+        for (index, window) in windows.enumerated() {
+            let windowType = window.isKind(of: NSPanel.self) ? "PANEL" : "WINDOW"
+            print("\(index): '\(window.title)' - type: \(windowType), visible: \(window.isVisible), frame: \(window.frame)")
         }
         
-        // Ensure window stays on screen
-        let screenFrame = NSScreen.main?.visibleFrame ?? .zero
-        let windowSize = window.frame.size
+        // Get ALL visible windows (including both startup and chat windows)
+        let visibleWindows = windows.filter { $0.isVisible }
+        print("Moving \(visibleWindows.count) visible windows")
         
-        newOrigin.x = max(screenFrame.minX, min(newOrigin.x, screenFrame.maxX - windowSize.width))
-        newOrigin.y = max(screenFrame.minY, min(newOrigin.y, screenFrame.maxY - windowSize.height))
+        if visibleWindows.isEmpty {
+            print("No visible windows to move")
+            return
+        }
         
-        window.setFrameOrigin(newOrigin)
+        for window in visibleWindows {
+            print("\n--- Moving: '\(window.title)' ---")
+            print("Current position: \(window.frame.origin)")
+            
+            var newOrigin = window.frame.origin
+            
+            switch direction {
+            case .up:
+                newOrigin.y += moveDistance
+                print("Direction: UP (+\(moveDistance)px)")
+            case .down:
+                newOrigin.y -= moveDistance
+                print("Direction: DOWN (-\(moveDistance)px)")
+            case .left:
+                newOrigin.x -= moveDistance
+                print("Direction: LEFT (-\(moveDistance)px)")
+            case .right:
+                newOrigin.x += moveDistance
+                print("Direction: RIGHT (+\(moveDistance)px)")
+            }
+            
+            print("Target position: \(newOrigin)")
+            
+            // For each window, check bounds on its current screen
+            if let screen = getScreenForWindow(window)?.visibleFrame {
+                let windowSize = window.frame.size
+                let originalOrigin = newOrigin
+                
+                newOrigin.x = max(screen.minX, min(newOrigin.x, screen.maxX - windowSize.width))
+                newOrigin.y = max(screen.minY, min(newOrigin.y, screen.maxY - windowSize.height))
+                
+                if newOrigin != originalOrigin {
+                    print("Adjusted for screen bounds: \(newOrigin)")
+                }
+            }
+            
+            window.setFrameOrigin(newOrigin)
+            print("Final position: \(window.frame.origin)")
+        }
+        
+        print("=== MOVEMENT COMPLETE ===\n")
+    }
+
+    private func getScreenForWindow(_ window: NSWindow) -> NSScreen? {
+        // Find which screen the window is currently on
+        let windowCenter = NSPoint(
+            x: window.frame.midX,
+            y: window.frame.midY
+        )
+        
+        return NSScreen.screens.first { $0.frame.contains(windowCenter) }
     }
 
     func toggleStealthMode() {
