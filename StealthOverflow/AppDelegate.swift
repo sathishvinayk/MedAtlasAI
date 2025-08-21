@@ -153,9 +153,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         window?.makeKeyAndOrderFront(nil)
         
          // ADD THIS LINE TO AUTOMATICALLY START CHAT
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.setupChatWindow()
-        }
+        // DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        //     self?.setupChatWindow()
+        // }
     }
 
     func setupChatWindow() {

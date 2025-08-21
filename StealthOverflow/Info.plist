@@ -33,12 +33,12 @@
 
     <key>ATSApplicationFontsPath</key>
     <array>
-        <string>Oxanium-Regular.ttf</string>
-        <string>Oxanium-Medium.ttf</string>
-        <string>Oxanium-SemiBold.ttf</string>
-        <string>Oxanium-Bold.ttf</string>
-        <string>Oxanium-ExtraBold.ttf</string>
-        <string>Lato-Italic.ttf</string>
+        <string>static/fonts/Oxanium-Regular.ttf</string>
+        <string>static/fonts/Oxanium-Medium.ttf</string>
+        <string>static/fonts/Oxanium-SemiBold.ttf</string>
+        <string>static/fonts/Oxanium-Bold.ttf</string>
+        <string>static/fonts/Oxanium-ExtraBold.ttf</string>
+        <string>static/fonts/Lato-Italic.ttf</string>
     </array>
 
     <key>NSAppleEventsUsageDescription</key>
