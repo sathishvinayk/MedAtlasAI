@@ -109,9 +109,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     func toggleStealthMode() {
         isStealthVisible.toggle()
         if isStealthVisible {
+            NSApplication.shared.unhide(nil) // Unhide the entire app
             window.orderFrontRegardless()
         } else {
-            window.orderOut(nil)
+            NSApplication.shared.hide(nil) // Hide the entire app
         }
     }
 
