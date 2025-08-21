@@ -1,6 +1,11 @@
 // Extensions.swift
 import Cocoa
 
+extension Notification.Name {
+    static let accessibilityPermissionGranted = Notification.Name("AccessibilityPermissionGranted")
+    static let accessibilityPermissionRevoked = Notification.Name("AccessibilityPermissionRevoked")
+}
+
 extension NSColor {
     static let appBackground = NSColor(red: 3/255, green: 7/255, blue: 18/255, alpha: 1.0)
     static let inputContainerColor = NSColor(red: 10/255, green: 15/255, blue: 30/255, alpha: 0.9)

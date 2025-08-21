@@ -1,47 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
- "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.yourcompany.StealthOverlay</string>
-    <key>CFBundleName</key>
-    <string>StealthOverlay</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1.0</string>
-    
-    <key>LSUIElement</key>
-    <true/>
-
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSExceptionDomains</key>
-        <dict>
-            <key>openrouter.ai</key>
-            <dict>
-                <key>NSIncludesSubdomains</key>
-                <true/>
-                <key>NSAllowsArbitraryLoads</key>
-                <true/>
-            </dict>
-        </dict>
-    </dict>
-
-    <key>ATSApplicationFontsPath</key>
-    <array>
-        <string>static/fonts/Oxanium-Regular.ttf</string>
-        <string>static/fonts/Oxanium-Medium.ttf</string>
-        <string>static/fonts/Oxanium-SemiBold.ttf</string>
-        <string>static/fonts/Oxanium-Bold.ttf</string>
-        <string>static/fonts/Oxanium-ExtraBold.ttf</string>
-        <string>static/fonts/Lato-Italic.ttf</string>
-    </array>
-
-    <key>NSAppleEventsUsageDescription</key>
-    <string>StealthOverflow needs accessibility access to monitor global Escape key events for quick app termination.</string>
+	<key>ATSApplicationFontsPath</key>
+	<array>
+		<string>static/fonts/Oxanium-Regular.ttf</string>
+		<string>static/fonts/Oxanium-Medium.ttf</string>
+		<string>static/fonts/Oxanium-SemiBold.ttf</string>
+		<string>static/fonts/Oxanium-Bold.ttf</string>
+		<string>static/fonts/Oxanium-ExtraBold.ttf</string>
+		<string>static/fonts/Lato-Italic.ttf</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>New Exception Domain</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>openrouter.ai</key>
+			<dict>
+				<key>NSAllowsArbitraryLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

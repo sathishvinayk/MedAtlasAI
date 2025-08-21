@@ -7,6 +7,7 @@ class HotKeyManager {
     private var eventHandlerRef: EventHandlerRef?
     private var arrowKeyHotKeysEnabled = true
     private var arrowKeyHotKeyIDs: Set<UInt32> = [3, 4, 5, 6] // Use Set for faster lookup
+    private let windowMovementManager = WindowMovementManager()
     
     init() {
         registerPermanentHotKeys()
@@ -76,16 +77,16 @@ class HotKeyManager {
                 NSApplication.shared.terminate(nil)
             case 3:
                 print("Moving window UP")
-                appDelegate?.moveWindow(direction: .up)
+                hotKeyManager?.windowMovementManager.moveAllVisibleWindows(direction: .up)
             case 4:
                 print("Moving window DOWN")
-                appDelegate?.moveWindow(direction: .down)
+                hotKeyManager?.windowMovementManager.moveAllVisibleWindows(direction: .down)
             case 5:
                 print("Moving window LEFT")
-                appDelegate?.moveWindow(direction: .left)
+                hotKeyManager?.windowMovementManager.moveAllVisibleWindows(direction: .left)
             case 6:
                 print("Moving window RIGHT")
-                appDelegate?.moveWindow(direction: .right)
+                hotKeyManager?.windowMovementManager.moveAllVisibleWindows(direction: .right)
             default:
                 break
             }
