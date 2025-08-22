@@ -11,13 +11,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		153EEC6A2E22992C002359DC /* StealthOverflow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StealthOverflow.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		153EEC6A2E22992C002359DC /* MedAtlasAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MedAtlasAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		153EEC6C2E22992C002359DC /* StealthOverflow */ = {
+		153EEC6C2E22992C002359DC /* MedAtlasAI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = StealthOverflow;
+			path = MedAtlasAI;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -37,7 +37,7 @@
 		153EEC612E22992C002359DC = {
 			isa = PBXGroup;
 			children = (
-				153EEC6C2E22992C002359DC /* StealthOverflow */,
+				153EEC6C2E22992C002359DC /* MedAtlasAI */,
 				153EEC6B2E22992C002359DC /* Products */,
 			);
 			sourceTree = "<group>";
@@ -45,7 +45,7 @@
 		153EEC6B2E22992C002359DC /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				153EEC6A2E22992C002359DC /* StealthOverflow.app */,
+				153EEC6A2E22992C002359DC /* MedAtlasAI.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -53,9 +53,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		153EEC692E22992C002359DC /* StealthOverflow */ = {
+		153EEC692E22992C002359DC /* MedAtlasAI */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 153EEC792E22992D002359DC /* Build configuration list for PBXNativeTarget "StealthOverflow" */;
+			buildConfigurationList = 153EEC792E22992D002359DC /* Build configuration list for PBXNativeTarget "MedAtlasAI" */;
 			buildPhases = (
 				153EEC662E22992C002359DC /* Sources */,
 				153EEC672E22992C002359DC /* Frameworks */,
@@ -66,14 +66,14 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				153EEC6C2E22992C002359DC /* StealthOverflow */,
+				153EEC6C2E22992C002359DC /* MedAtlasAI */,
 			);
-			name = StealthOverflow;
+			name = MedAtlasAI;
 			packageProductDependencies = (
 				1578FBEA2E34B23100B2C0E3 /* Highlightr */,
 			);
-			productName = StealthOverflow;
-			productReference = 153EEC6A2E22992C002359DC /* StealthOverflow.app */;
+			productName = MedAtlasAI;
+			productReference = 153EEC6A2E22992C002359DC /* MedAtlasAI.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -91,7 +91,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 153EEC652E22992C002359DC /* Build configuration list for PBXProject "StealthOverflow" */;
+			buildConfigurationList = 153EEC652E22992C002359DC /* Build configuration list for PBXProject "MedAtlasAI" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -108,7 +108,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				153EEC692E22992C002359DC /* StealthOverflow */,
+				153EEC692E22992C002359DC /* MedAtlasAI */,
 			);
 		};
 /* End PBXProject section */
@@ -257,16 +257,16 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = StealthOverflow/StealthOverflow.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MedAtlasAI/MedAtlasAI.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				EMIT_FRONTEND_COMMAND_LINES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = StealthOverflow/Info.plist;
+				INFOPLIST_FILE = MedAtlasAI/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "StealthOverflow needs accessibility access to monitor global Escape key events for quick app termination.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "MedAtlasAI needs accessibility access to monitor global Escape key events for quick app termination.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -279,7 +279,7 @@
 					"-Xlinker",
 					"-interposable",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.exadec.StealthOverflow;
+				PRODUCT_BUNDLE_IDENTIFIER = com.exadec.MedAtlasAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -292,16 +292,16 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = StealthOverflow/StealthOverflow.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MedAtlasAI/MedAtlasAI.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				EMIT_FRONTEND_COMMAND_LINES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = StealthOverflow/Info.plist;
+				INFOPLIST_FILE = MedAtlasAI/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "StealthOverflow needs accessibility access to monitor global Escape key events for quick app termination.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "MedAtlasAI needs accessibility access to monitor global Escape key events for quick app termination.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -310,7 +310,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.exadec.StealthOverflow;
+				PRODUCT_BUNDLE_IDENTIFIER = com.exadec.MedAtlasAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -321,7 +321,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		153EEC652E22992C002359DC /* Build configuration list for PBXProject "StealthOverflow" */ = {
+		153EEC652E22992C002359DC /* Build configuration list for PBXProject "MedAtlasAI" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				153EEC772E22992D002359DC /* Debug */,
@@ -330,7 +330,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		153EEC792E22992D002359DC /* Build configuration list for PBXNativeTarget "StealthOverflow" */ = {
+		153EEC792E22992D002359DC /* Build configuration list for PBXNativeTarget "MedAtlasAI" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				153EEC7A2E22992D002359DC /* Debug */,

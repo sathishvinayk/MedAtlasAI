@@ -1,6 +1,6 @@
 //
 //  ViewController.swift
-//  StealthOverflow
+//  MedAtlasAI
 //
 //  Created by Sathishvinayk on 12/07/25.
 //

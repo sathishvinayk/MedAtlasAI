@@ -12,7 +12,7 @@ struct ChatUIBuilder {
     }
 
     static func buildChatUI(in container: NSView, delegate: NSTextViewDelegate, target: AnyObject, sendAction: Selector, stopAction: Selector) -> ChatUI {
-        let titleLabel = NSTextField(labelWithString: "Silent Glass")
+        let titleLabel = NSTextField(labelWithString: "MedAtlasAI")
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = NSFont.boldSystemFont(ofSize: 14)
         titleLabel.alignment = .center

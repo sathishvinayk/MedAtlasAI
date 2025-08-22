@@ -13,7 +13,6 @@ func injectHotReload() {
 class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     private var startupWindowManager: StartupWindowManager!
     private var windowManager: WindowManager!
-    // private var windowMovementManager: WindowMovementManager! // Add this
     private let moveDistance: CGFloat = 10.0 // Pixels to move per key press
     
     var sendButton: NSButton!
@@ -29,16 +28,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     var inputScroll: NSScrollView!
     var inputHeightConstraint: NSLayoutConstraint!
 
-    func toggleStealthMode() {
-        isStealthVisible.toggle()
-        if isStealthVisible {
-            NSApplication.shared.unhide(nil) // Unhide the entire app
-            window.orderFrontRegardless()
-        } else {
-            NSApplication.shared.hide(nil) // Hide the entire app
-        }
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
         injectHotReload()
@@ -46,7 +35,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
 
         FontManager.shared.registerFontsSynchronously()
         hotKeyManager = HotKeyManager()
-        // windowMovementManager = WindowMovementManager() // Initialize here
         setupStartupWindow()
 
         NotificationCenter.default.addObserver(
@@ -89,9 +77,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
             }
             return
         }
-        
-        // windowMovementManager.disableWindowMovement()
-        
         // Clean up startup window
         startupWindowManager?.close()
         startupWindowManager = nil
@@ -173,7 +158,5 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
     }
 
     // Add cleanup in deinit if needed
-    deinit {
-        // windowMovementManager.disableWindowMovement()
-    }
+    deinit {}
 }
