@@ -77,6 +77,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
             }
             return
         }
+        // Clean up startup window - CLOSE THE ACTUAL WINDOW FIRST
+        if let startupWindow = startupWindowManager?.startupWindow {
+            startupWindow.close() // Close the actual window
+        }
         // Clean up startup window
         startupWindowManager?.close()
         startupWindowManager = nil

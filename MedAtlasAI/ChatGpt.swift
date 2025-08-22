@@ -21,7 +21,7 @@ class ChatApiService: NSObject, URLSessionDataDelegate {
     public func fetchGPTResponse(for prompt: String, onUpdate: @escaping (String) -> Void) {
         cancelCurrentRequest() // Cancel any existing request first
         
-        let OpenRouterKey = "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"
+        let OpenRouterKey = "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"
         let url = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

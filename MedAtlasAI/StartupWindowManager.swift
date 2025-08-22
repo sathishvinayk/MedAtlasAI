@@ -1,7 +1,7 @@
 import Cocoa
 
 class StartupWindowManager: NSObject {
-    private var startupWindow: NSWindow?
+    private(set) var startupWindow: NSWindow? // Make this accessible
     private var chatButton: NSButton?
     private var codeChatButton: NSButton?
     var onStartChat: (() -> Void)?
@@ -34,7 +34,7 @@ class StartupWindowManager: NSObject {
         startupWindow.level = .normal
         startupWindow.hasShadow = true
         startupWindow.alphaValue = 0.7
-        startupWindow.isMovable = true // Enable window moving
+        startupWindow.isMovable = true
         
         let contentView = MovableView(frame: startupWindow.contentView!.bounds)
         contentView.wantsLayer = true
@@ -59,13 +59,24 @@ class StartupWindowManager: NSObject {
                 ]
             )
             titleLabel.attributedStringValue = attributedString
-            
-            titleLabel.wantsLayer = true
-            titleLabel.shadow = NSShadow()
-            titleLabel.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.6)
-            titleLabel.shadow?.shadowBlurRadius = 0
-            titleLabel.shadow?.shadowOffset = NSSize(width: 2, height: -2)
+        } else {
+            // Fallback font
+            let attributedString = NSAttributedString(
+                string: "MedAtlasAI",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 32, weight: .bold),
+                    .foregroundColor: NSColor.white,
+                    .kern: 2.0
+                ]
+            )
+            titleLabel.attributedStringValue = attributedString
         }
+        
+        titleLabel.wantsLayer = true
+        titleLabel.shadow = NSShadow()
+        titleLabel.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        titleLabel.shadow?.shadowBlurRadius = 0
+        titleLabel.shadow?.shadowOffset = NSSize(width: 2, height: -2)
 
         let subTitle = NSTextField(labelWithString: "A Medical AI Coding Assistant")
         if let lato = NSFont(name: "Lato-Italic", size: 14) {
@@ -78,13 +89,24 @@ class StartupWindowManager: NSObject {
                 ]
             )
             subTitle.attributedStringValue = attributedString
-            
-            subTitle.wantsLayer = true
-            subTitle.shadow = NSShadow()
-            subTitle.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.6)
-            subTitle.shadow?.shadowBlurRadius = 0
-            subTitle.shadow?.shadowOffset = NSSize(width: 2, height: -2)
+        } else {
+            // Fallback font
+            let attributedString = NSAttributedString(
+                string: "A Medical AI Coding Assistant",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 14, weight: .regular),
+                    .foregroundColor: NSColor.white,
+                    .kern: 2.0
+                ]
+            )
+            subTitle.attributedStringValue = attributedString
         }
+        
+        subTitle.wantsLayer = true
+        subTitle.shadow = NSShadow()
+        subTitle.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        subTitle.shadow?.shadowBlurRadius = 0
+        subTitle.shadow?.shadowOffset = NSSize(width: 2, height: -2)
 
         // Chat Button with hover effects
         chatButton = createChatButton(title: "Chat AI", action: #selector(handleChatButton))
@@ -109,6 +131,25 @@ class StartupWindowManager: NSObject {
                 string: "to quit",
                 attributes: [
                     .font: lato,
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.8)
+                ]
+            )
+            toQuitText.attributedStringValue = quitAttributedString
+        } else {
+            // Fallback fonts
+            let pressAttributedString = NSAttributedString(
+                string: "Press",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.8)
+                ]
+            )
+            pressText.attributedStringValue = pressAttributedString
+            
+            let quitAttributedString = NSAttributedString(
+                string: "to quit",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .regular),
                     .foregroundColor: NSColor.white.withAlphaComponent(0.8)
                 ]
             )
@@ -190,15 +231,15 @@ class StartupWindowManager: NSObject {
         container.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
         container.layer?.borderWidth = 1
         container.layer?.borderColor = NSColor.white.withAlphaComponent(0.3).cgColor
-        
+
         let label = NSTextField(labelWithString: text.uppercased())
-        if let font = NSFont.systemFont(ofSize: 10, weight: .medium) {
+        if let oxaniumFont = NSFont(name: "Oxanium-Bold", size: 12) {
             let attributedString = NSAttributedString(
                 string: text.uppercased(),
                 attributes: [
-                    .font: font,
+                    .font: oxaniumFont,
                     .foregroundColor: NSColor.white.withAlphaComponent(0.9),
-                    .kern: 0.5
+                    .kern: 1
                 ]
             )
             label.attributedStringValue = attributedString
